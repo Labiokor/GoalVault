@@ -1,0 +1,27 @@
+{
+  "name": "backend",
+  "version": "1.0.0",
+  "description": "A mini project with the aim of bringing most productivity apps together into a centralized system to help enhance productivity and also help track finances with the aid  of a streak feature to help the user stay consistent.",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Labiokor/Goal-Vault-.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Labiokor/Goal-Vault-/issues"
+  },
+  "homepage": "https://github.com/Labiokor/Goal-Vault-#readme",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "cors": "^2.8.5",
+    "express": "^5.2.1",
+    "mongoose": "^9.0.2"
+  }
+}

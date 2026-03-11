@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GOAL VAULT</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href=" https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+
+<body>
+    <header>
+      <div class="brand-top-left">
+        <h1>GOAL VAULT</h1>
+        <p> 
+            <strong>Plan.Focus.Achieve</strong>
+        </p>
+        </div>
+    </header>
+     <div class="user-top-right">
+         <div id="streakMenu" title="current streak">
+    <span class="streak-icon">🔥</span>
+    <span class="streak-count">0</span>
+    <span class="streak-tooltip">Current streak: 0 days</span>
+</div>
+    </div>
+<nav class="nav_bottom">
+  <div class="nav-item" id="dashboardBtn">
+        <a data-target="dashboardSection"><i class="fa-solid fa-chart-line"></i>Dashboard</a>
+      </div>
+
+  <div class="nav-item" id="plannerBtn">
+        <a data-target="plannerSection"><i class= "fa-solid fa-calendar-check"></i>Planner</a>
+      </div>
+
+  <div class="nav-item" id="habitBtn">
+        <a data-target="habitSection"><i class="fa-solid fa-check"></i> Habits</a>
+       </div>
+
+  <div class="nav-item" id="notesBtn">
+         <a data-target="notesSection"><i class="fas fa-sticky-note"></i> Notes</a>
+       </div>
+   <div class="nav-item" id="TaskBtn">
+         <a data-target="taskSection"><i class="fa-solid fa-list-check"></i> Tasks</a>
+        </div>
+    <div class="nav-item" id="AccountBtn">
+          <a data-target="accountSection"><i class="fa-solid fa-user"></i>Account</a>
+        </div>
+</nav>
+      <div id="dashboardSection" class="section">
+           <h3>Welcome,User!</h3>
+              <p>Your productivity overview</p>
+          </div>
+
+      <div id="plannerSection" class="section" style="display: none;">
+        <div class="card">
+           <h3>weekly plan</h3> 
+        <div class="planner-box">
+           <input type="text" class="weekly-plan-input" placeholder="set a goal">
+            </div>
+      <div class="planner-box">
+        <input type="text" class="weekly-plan-input" placeholder="set up a device">
+           </div>
+         <h3>Reminder</h3>
+      <div class="planner-box">
+          <input type="datetime-local" class="reminder-input" placeholder="enter reminder">
+          <button onclick="setReminder()">set reminder</button>
+          <ul id="reminderList"></ul>
+         </div>
+      </div>
+   </div>
+
+   <div  id="taskSection" class="section" style="display: none;">
+    <div class="card" id="taskCard">
+      <h3>task manager</h3>
+      <p>manage your productivity and track progress</p>
+     <ul id="tasklist" >
+          <li>add a new task</li>
+     </ul>
+  <div class="task-input-area">
+    <input type="text" id="taskinput" placeholder="Add a task...">
+  <select id="prioritySelect">
+    <option value="low">low</option>
+    <option value="medium">medium</option> 
+    <option value="high">high</option>
+  </select>
+     <button id="addTaskBtn">Add</button>
+</div>
+    </div>
+   <div class="card" id="statusCard">
+        <h3>Status</h3> 
+   <div class="status-item">
+    <label>
+      <input type="checkbox"> Not Started
+    </label>
+  </div>
+  <div class="status-item">
+    <label>
+      <input type="checkbox"> In Progress
+    </label>
+  </div>
+  <div class="status-item">
+    <label>
+      <input type="checkbox"> Completed
+    </label>
+      </div>
+  </div>
+  <div class="deadline-box">
+    <label>Deadline</label>
+    <input type="date">
+    </div>
+    <p class="sub-label">Task Progress</p>
+       <div class="progress-container">
+            <div class="progress-bar">60%</div>
+         </div>
+ </div>
+
+<div id="habitSection"  class="section" style="display: none;">
+    <h3>Daily Habits</h3>
+        <div class="habit-input">
+            <input type="text" id="habitInput" placeholder="add a new habit">
+            <button id="addHabitBtn">Add</button>
+        </div>
+      <div class="habit-item">
+         <span>Habit name</span>
+         <input type="checkbox" class="habit-check">
+      </div>
+    <div class="habit-container" id="habitContainer"></div>
+    <div class="habit-stats">
+        <p class="sub-label">Today's Score:</p>
+          <span id="habitScore" ></span>
+       <div class="habit-stats-container">
+            <div class="habit-stats-bar">30%</div>
+         </div>
+    </div>
+</div>
+  
+<div id="notesSection" class="section" style="display:none;">
+   <div class="card">
+<h3>Notes</h3>
+    <div class="notes-input-area">
+      <input type="text" id="noteInput" placeholder="Write a note...">
+      <button id="addNoteBtn" class="btn-small">Add</button>
+    </div>
+    <ul id="notesList">
+        </ul>
+  </div>
+</div>
+
+<div id="accountSection" class="section" style="display: none;">
+    <div id="accountHome" class="account-page">
+       <div class="card">
+         <h3>Profile</h3>
+   <button id="openWalletBtn" class="btn">My Wallet</button>
+       </div>
+    </div>
+  <div id="walletPage" class="account-page" style="display: none;">
+      <div class="card">
+      <button class="close-btn">&times;</button>
+      <p class="balance-text">Current Balance</p>
+      <h1 id="balanceAmount">$1,250</h1>
+      <button class="btn add-funds">Add Funds</button>
+    </div>
+  </div>
+</div>
+  <script src="app.js"></script>
+</body>
+</html>

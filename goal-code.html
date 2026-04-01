@@ -3,23 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GOAL VAULT</title>
+    <title>Hub</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="stylesheet" href=" https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
 </head>
-
 <body>
     <header>
       <div class="brand-top-left">
-        <h1>GOAL VAULT</h1>
+        <h1>Hub</h1>
         <p> 
             <strong>Plan.Focus.Achieve</strong>
         </p>
         </div>
     </header>
      <div class="user-top-right">
+      <button id="darkModeBtn" title="Toggle dark mode">dark mode</button>
          <div id="streakMenu" title="current streak">
-    <span class="streak-icon">🔥</span>
+    <span class="streak-icon">🔥</fa-fire></span>
     <span class="streak-count">0</span>
     <span class="streak-tooltip">Current streak: 0 days</span>
 </div>
@@ -48,10 +49,27 @@
         </div>
 </nav>
       <div id="dashboardSection" class="section">
-           <h3>Welcome,User!</h3>
+           <h3>Welcome,<span id="usernameDisplay">User</span></h3>
               <p>Your productivity overview</p>
-          </div>
-
+  <div class="dashboard-grid">
+    <div class="card dash-card">
+      <h4>Tasks</h4>
+      <p id="dashTasks">0 remaining</p>
+    </div>
+    <div class="card dash-card">
+      <h4>Habits</h4>
+      <p id="dashHabits">0% done today</p>
+    </div>
+    <div class="card dash-card">
+      <h4>Streak</h4>
+      <p id="dashStreak">0 days</p>
+    </div>
+    <div class="card dash-card">
+      <h4>Notes</h4>
+      <p id="dashNotes">0 saved</p>
+    </div>
+  </div>
+</div>
       <div id="plannerSection" class="section" style="display: none;">
         <div class="card">
            <h3>weekly plan</h3> 
@@ -74,9 +92,14 @@
     <div class="card" id="taskCard">
       <h3>task manager</h3>
       <p>manage your productivity and track progress</p>
-     <ul id="tasklist" >
-          <li>add a new task</li>
-     </ul>
+      <div class="category-filters">
+  <button class="filter-btn active" data-filter="all">All</button>
+  <button class="filter-btn" data-filter="general">General</button>
+  <button class="filter-btn" data-filter="work">Work</button>
+  <button class="filter-btn" data-filter="personal">Personal</button>
+  <button class="filter-btn" data-filter="school">School</button>
+</div>
+     <ul id="tasklist" ></ul>
   <div class="task-input-area">
     <input type="text" id="taskinput" placeholder="Add a task...">
   <select id="prioritySelect">
@@ -84,36 +107,37 @@
     <option value="medium">medium</option> 
     <option value="high">high</option>
   </select>
-     <button id="addTaskBtn">Add</button>
+   <select id="categorySelect">
+    <option value="general">general</option>
+    <option value="work">work</option>
+    <option value="personal">personal</option>
+    <option value="school">school</option>
+  </select>
+   <input type="date" id="taskDeadline">
+    <button id="addTaskBtn">Add</button>
+   </div>
 </div>
-    </div>
    <div class="card" id="statusCard">
         <h3>Status</h3> 
    <div class="status-item">
-    <label>
-      <input type="checkbox"> Not Started
-    </label>
+    <label><input type="checkbox"> Not Started</label>
   </div>
   <div class="status-item">
-    <label>
-      <input type="checkbox"> In Progress
-    </label>
+    <label><input type="checkbox"> In Progress</label>
   </div>
   <div class="status-item">
-    <label>
-      <input type="checkbox"> Completed
-    </label>
+    <label><input type="checkbox"> Completed</label>
       </div>
-  </div>
   <div class="deadline-box">
     <label>Deadline</label>
-    <input type="date">
+    <input type="date" id="deadlineInput">
     </div>
     <p class="sub-label">Task Progress</p>
        <div class="progress-container">
-            <div class="progress-bar">60%</div>
+            <div class="progress-bar">0%</div>
          </div>
- </div>
+      </div>
+   </div>
 
 <div id="habitSection"  class="section" style="display: none;">
     <h3>Daily Habits</h3>
@@ -123,7 +147,6 @@
         </div>
       <div class="habit-item">
          <span>Habit name</span>
-         <input type="checkbox" class="habit-check">
       </div>
     <div class="habit-container" id="habitContainer"></div>
     <div class="habit-stats">
@@ -151,6 +174,8 @@
     <div id="accountHome" class="account-page">
        <div class="card">
          <h3>Profile</h3>
+         <input type="text" id="usernameInput" placeholder="Enter your name">
+   <button id="saveUsernameBtn" class="btn">Save Name</button>
    <button id="openWalletBtn" class="btn">My Wallet</button>
        </div>
     </div>

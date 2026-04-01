@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>login</title>
+   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+<body>
+  <div class="login-card" id="loginCard">
+        <h2>Welcome back</h2>
+        <p class="subtitle">Log in to your Hub account</p>
+
+        <div class="input-group">
+            <label for="emailInput">Email</label>
+            <div class="input-wrapper">
+                <i class="fa-solid fa-envelope"></i>
+                <input type="email" id="emailInput" placeholder="you@example.com" autocomplete="email">
+            </div>
+            <p class="error-msg" id="emailError">Please enter a valid email.</p>
+        </div>
+         <div class="input-group">
+            <label for="passwordInput">Password</label>
+            <div class="input-wrapper">
+                <i class="fa-solid fa-lock"></i>
+                <input type="password" id="passwordInput" placeholder="Enter your password" autocomplete="current-password">
+                <i class="fa-solid fa-eye toggle-password" id="togglePw"></i>
+            </div>
+            <p class="error-msg" id="passwordError">Password must be at least 6 characters.</p>
+        </div>
+        <div class="remember-me">
+    <input type="checkbox" id="rememberMe">
+    <label for="rememberMe">Remember me</label>
+</div>
+
+<p class="forgot-password"><a href="#" id="forgotBtn">Forgot password?</a></p>
+
+        <button class="login-btn" id="loginBtn">Log In</button>
+        <hr class="divider">
+        <p class="signup-text">Don't have an account? <a href="#">Sign up</a></p>
+        <div class="forgot-card" id="forgotCard" style="display: none">
+    <h3>Reset Password</h3>
+    <p>Enter your email and we'll send you a reset link.</p>
+    <div class="input-group">
+        <label for="resetEmail">Email</label>
+        <div class="input-wrapper">
+            <i class="fa-solid fa-envelope"></i>
+            <input type="email" id="resetEmail" placeholder="you@example.com">
+        </div>
+    </div>
+    <button class="login-btn" id="resetBtn">Send Reset Link</button>
+    <br>
+    <button class="back-btn" id="backBtn">← Back to Login</button>
+</div>
+<!-- Sign up popup overlay -->
+<div class="signup-overlay" id="signupOverlay">
+    <div class="signup-popup">
+        <button class="close-signup" id="closeSignup">&times;</button>
+        <h2>Create Account</h2>
+        <p class="subtitle">Join Hub today</p>
+
+        <div class="input-group">
+            <label for="signupEmail">Email</label>
+            <div class="input-wrapper">
+                <i class="fa-solid fa-envelope"></i>
+                <input type="email" id="signupEmail" placeholder="you@example.com">
+            </div>
+            <p class="error-msg" id="signupEmailError">Please enter a valid email.</p>
+        </div>
+
+        <div class="input-group">
+            <label for="signupPassword">Password</label>
+            <div class="input-wrapper">
+                <i class="fa-solid fa-lock"></i>
+                <input type="password" id="signupPassword" placeholder="Create a password">
+                <i class="fa-solid fa-eye toggle-password" id="toggleSignupPw"></i>
+            </div>
+            <p class="error-msg" id="signupPasswordError">Password must be at least 6 characters.</p>
+        </div>
+
+        <div class="input-group">
+            <label for="confirmPassword">Confirm Password</label>
+            <div class="input-wrapper">
+                <i class="fa-solid fa-lock"></i>
+                <input type="password" id="confirmPassword" placeholder="Repeat your password">
+            </div>
+            <p class="error-msg" id="confirmPasswordError">Passwords do not match.</p>
+        </div>
+
+        <button class="login-btn" id="signupBtn">Create Account</button>
+    </div>
+</div>
+  </div>
+  <script src="login.js"></script>
+</body>
+</html>

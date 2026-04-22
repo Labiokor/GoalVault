@@ -1,27 +1,21 @@
-
 const mongoose = require('mongoose')
 
 const ReminderSchema = new mongoose.Schema({
-
-  user:{
-    type:mongoose.Schema.Types.ObjectId,
-    ref:'User'
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
-
-  message:String,
-
-  remindAt:Date,
-
-  recurring:{
-    type:Boolean,
-    default:false
+  title: { type: String, required: true },       // was 'message' — renamed
+  datetime: { type: Date, required: true },       // was 'remindAt' — renamed to match controller sort
+  notes: { type: String, default: '' },
+  recurring: { type: Boolean, default: false },
+  recurrenceType: {
+    type: String,
+    enum: ['daily', 'weekly', 'monthly'],
+    default: null
   },
+  completed: { type: Boolean, default: false }    // needed to mark reminders as done
+}, { timestamps: true })
 
-  recurrenceType:{
-    type:String,
-    enum:['daily','weekly','monthly']
-  }
-
-})
-
-module.exports = mongoose.model('Reminder',ReminderSchema)
+module.exports = mongoose.model('Reminder', ReminderSchema)

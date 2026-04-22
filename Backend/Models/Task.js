@@ -1,29 +1,24 @@
 const mongoose = require('mongoose')
 
 const TaskSchema = new mongoose.Schema({
-
-  user:{
-    type:mongoose.Schema.Types.ObjectId,
-    ref:'User'
+  user: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
   },
-
-  title:String,
-
-  description:String,
-
-  status:{
-    type:String,
-    enum:['pending','completed'],
-    default:'pending'
+  title: { type: String, required: true },
+  description: { type: String, default: '' },
+  status: {
+    type: String,
+    enum: ['todo', 'doing', 'done'],    // expanded from pending/completed
+    default: 'todo'
   },
+  priority: {
+    type: String,
+    enum: ['high', 'medium', 'low'],
+    default: 'medium'
+  },
+  deadline: { type: Date }
+}, { timestamps: true })               // replaces manual createdAt
 
-  dueDate:Date,
-
-  createdAt:{
-    type:Date,
-    default:Date.now
-  }
-
-})
-
-module.exports = mongoose.model('Task',TaskSchema)
+module.exports = mongoose.model('Task', TaskSchema)

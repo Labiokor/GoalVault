@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoalVault</title>
+</head>
+<body>
+  <script type="module">
+    import { isLoggedIn } from './js/utils/helpers.js'
+    if (isLoggedIn()) {
+      window.location.href = '/pages/dashboard.html'
+    } else {
+      window.location.href = '/login.html'
+    }
+  </script>
+</body>
+</html>

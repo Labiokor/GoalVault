@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GoalVault | Login</title>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col" data-page="login">
+
+  <header class="fixed top-0 w-full bg-slate-50/70 backdrop-blur-xl z-50">
+    <nav class="flex justify-between items-center px-8 py-4 max-w-7xl mx-auto">
+      <h1 class="text-2xl font-black tracking-tighter text-primary font-headline">GoalVault</h1>
+    </nav>
+  </header>
+
+  <main class="flex-grow flex flex-col items-center justify-center pt-24 pb-12 px-6">
+    <div class="w-full max-w-md">
+      <div class="bg-surface-container-lowest rounded-lg p-10 border border-outline-variant/10 relative overflow-hidden"
+           style="box-shadow: 0 12px 60px -12px rgba(45,51,53,0.08)">
+        
+        <div class="mb-10">
+          <h2 class="font-headline font-bold text-3xl tracking-tight text-on-background mb-2">Welcome back</h2>
+          <p class="text-on-surface-variant text-sm">Sign in to your sanctuary</p>
+        </div>
+
+        <!-- Error message -->
+        <div id="auth-error" class="hidden mb-6 p-4 bg-error-container/20 text-error rounded-lg text-sm font-medium"></div>
+
+        <form id="login-form" class="space-y-6">
+          <div class="space-y-1.5">
+            <label class="form-label" for="email">Email Address</label>
+            <input class="form-input" id="email" type="email" placeholder="you@example.com" required>
+          </div>
+
+          <div class="space-y-1.5">
+            <div class="flex justify-between items-center">
+              <label class="form-label" for="password">Password</label>
+              <a class="text-[0.7rem] font-medium text-primary hover:underline" href="#">Forgot password?</a>
+            </div>
+            <input class="form-input" id="password" type="password" placeholder="••••••••" required>
+          </div>
+
+          <button class="w-full vault-gradient text-on-primary py-4 rounded font-semibold text-sm tracking-wide hover:opacity-95 active:scale-[0.98] transition-all"
+                  type="submit" id="login-btn">
+            Sign In
+          </button>
+        </form>
+
+        <div class="mt-8 text-center">
+          <p class="text-sm text-on-surface-variant">
+            Don't have an account?
+            <a class="text-primary font-semibold hover:underline ml-1" href="/register.html">Sign up</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer class="w-full py-8 border-t border-slate-200/10">
+    <p class="text-center text-sm text-slate-500">© 2026 GoalVault. Be Productive.</p>
+  </footer>
+
+  <script type="module" src="./js/main.js"></script>
+  <script type="module" src="./js/modules/auth.js"></script>
+</body>
+</html>

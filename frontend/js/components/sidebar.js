@@ -57,6 +57,12 @@ export function renderSidebar(activePage = '') {
   `
 
   document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar)
+
+  // At the end of renderSidebar function, after the innerHTML is set
+  document.querySelector('.avatar')?.addEventListener('click', () => {
+  window.location.href = '/pages/settings.html'
+})
+  document.querySelector('.avatar')?.style.setProperty('cursor', 'pointer')
 }
 
 export function toggleSidebar() {

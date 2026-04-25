@@ -3,15 +3,14 @@ import { saveAuth, isLoggedIn } from '../utils/helpers.js'
 
 const page = document.body.dataset.page
 
-// Redirect if already logged in
-if (isLoggedIn()) {
+// Only redirect away from login/register if already logged in
+if (isLoggedIn() && (page === 'login' || page === 'register')) {
   window.location.href = '/pages/dashboard.html'
 }
 
 // ─── LOGIN ────────────────────────────────────────────────────────
 if (page === 'login') {
   const form = document.getElementById('login-form')
-  const errorBox = document.getElementById('auth-error')
   const btn = document.getElementById('login-btn')
 
   form?.addEventListener('submit', async (e) => {
@@ -36,7 +35,6 @@ if (page === 'login') {
 // ─── REGISTER ─────────────────────────────────────────────────────
 if (page === 'register') {
   const form = document.getElementById('register-form')
-  const errorBox = document.getElementById('auth-error')
   const btn = document.getElementById('register-btn')
 
   form?.addEventListener('submit', async (e) => {

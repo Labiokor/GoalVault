@@ -20,6 +20,13 @@ export function requireAuth() {
   }
 }
 
+export function handleAuthError(err) {
+  if (err.message && (err.message.toLowerCase().includes('expired') || err.message.toLowerCase().includes('invalid token') || err.message.toLowerCase().includes('not authorized'))) {
+    clearAuth()
+    window.location.href = '/login.html'
+  }
+}
+
 export function formatDate(dateStr) {
   const date = new Date(dateStr)
   return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })

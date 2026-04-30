@@ -1,5 +1,4 @@
 import { api } from '../api/api.js'
-import { formatDate } from '../utils/helpers.js'
 
 const root = document.getElementById('page-root')
 let allReminders = []
@@ -18,23 +17,52 @@ async function init() {
 }
 
 function renderPage() {
+  const upcoming = allReminders.filter(r => !r.completed)
+  const completed = allReminders.filter(r => r.completed)
+  const overdue = upcoming.filter(r => new Date(r.datetime) < new Date())
+
   root.innerHTML = `
     <div class="max-w-4xl mx-auto">
 
-      <div class="flex flex-col md:flex-row md:items-end justify-between gap-4 mb-10">
-        <div>
-          <p class="text-primary font-bold uppercase tracking-widest text-xs mb-2">Stay on Track</p>
-          <h2 class="text-4xl font-extrabold font-headline text-on-surface tracking-tight">Reminders</h2>
+      <!-- Welcome Header -->
+      <div class="vault-gradient rounded-xl p-8 text-on-primary relative overflow-hidden mb-8">
+        <div class="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full -mr-24 -mt-24"></div>
+        <div class="relative z-10">
+          <p class="text-on-primary/70 font-bold uppercase tracking-widest text-xs mb-2">Stay on Track</p>
+          <h2 class="text-3xl font-extrabold font-headline tracking-tight mb-2">My Reminders</h2>
+          <p class="text-on-primary/80 text-sm">
+            ${upcoming.length === 0
+              ? 'You have no upcoming reminders. Set one to stay ahead.'
+              : overdue.length > 0
+                ? overdue.length + ' overdue reminder' + (overdue.length !== 1 ? 's' : '') + ' need your attention.'
+                : upcoming.length + ' upcoming reminder' + (upcoming.length !== 1 ? 's' : '') + '. Keep it up!'}
+          </p>
         </div>
         <button id="open-reminder-modal"
-                class="vault-gradient text-on-primary px-6 py-3 rounded-full font-bold text-sm flex items-center gap-2 hover:opacity-90 transition-all w-fit">
+                class="absolute right-8 top-1/2 -translate-y-1/2 bg-white/20 hover:bg-white/30 text-on-primary px-5 py-2.5 rounded-full font-bold text-sm flex items-center gap-2 transition-all">
           <span class="material-symbols-outlined text-sm">add</span>
           New Reminder
         </button>
       </div>
 
+      <!-- Stats row -->
+      <div class="grid grid-cols-3 gap-4 mb-8">
+        <div class="bg-surface-container-lowest p-5 rounded-xl text-center ring-1 ring-outline-variant/5">
+          <p class="text-2xl font-black font-headline text-primary">${upcoming.length}</p>
+          <p class="text-xs text-on-surface-variant uppercase font-bold mt-1">Upcoming</p>
+        </div>
+        <div class="bg-surface-container-lowest p-5 rounded-xl text-center ring-1 ring-outline-variant/5">
+          <p class="text-2xl font-black font-headline text-error">${overdue.length}</p>
+          <p class="text-xs text-on-surface-variant uppercase font-bold mt-1">Overdue</p>
+        </div>
+        <div class="bg-surface-container-lowest p-5 rounded-xl text-center ring-1 ring-outline-variant/5">
+          <p class="text-2xl font-black font-headline text-tertiary">${completed.length}</p>
+          <p class="text-xs text-on-surface-variant uppercase font-bold mt-1">Completed</p>
+        </div>
+      </div>
+
       <!-- Tabs -->
-      <div class="flex gap-2 mb-8 bg-surface-container-low p-1 rounded-xl w-fit">
+      <div class="flex gap-2 mb-6 bg-surface-container-low p-1 rounded-xl w-fit">
         <button class="tab-btn px-5 py-2 rounded-lg text-sm font-bold transition-all" data-tab="upcoming">Upcoming</button>
         <button class="tab-btn px-5 py-2 rounded-lg text-sm font-bold transition-all" data-tab="completed">Completed</button>
       </div>
@@ -61,16 +89,16 @@ function renderPage() {
             <input class="form-input" id="reminder-title" type="text" placeholder="What do you need to remember?">
           </div>
           <div>
-            <label class="form-label">Date & Time</label>
+            <label class="form-label">Date and Time</label>
             <input class="form-input" id="reminder-datetime" type="datetime-local">
           </div>
           <div>
             <label class="form-label">Notes (optional)</label>
             <textarea class="form-input resize-none" id="reminder-notes" rows="2" placeholder="Additional details..."></textarea>
           </div>
-          <div class="flex items-center gap-3 p-4 bg-surface-container-low rounded-xl">
+          <div class="flex items-center gap-3 p-4 bg-surface-container-low rounded-xl cursor-pointer" id="recurring-toggle">
             <input type="checkbox" id="reminder-recurring" class="w-4 h-4 accent-primary">
-            <label for="reminder-recurring" class="text-sm font-medium text-on-surface cursor-pointer">Recurring reminder</label>
+            <label for="reminder-recurring" class="text-sm font-medium text-on-surface cursor-pointer flex-1">Recurring reminder</label>
           </div>
           <div id="recurrence-options" class="hidden">
             <label class="form-label">Repeat Every</label>
@@ -103,50 +131,71 @@ function renderRemindersList() {
     : allReminders.filter(r => r.completed)
 
   if (filtered.length === 0) {
-    list.innerHTML = '<div class="flex flex-col items-center justify-center py-16 gap-3 text-center">'
-      + '<div class="w-16 h-16 rounded-full bg-surface-container flex items-center justify-center">'
-      + '<span class="material-symbols-outlined text-on-surface-variant text-3xl">notifications_off</span></div>'
-      + '<p class="text-base font-bold text-on-surface">' + (activeTab === 'upcoming' ? 'No upcoming reminders' : 'No completed reminders') + '</p>'
-      + '<p class="text-sm text-on-surface-variant">Click "New Reminder" to add one</p>'
+    list.innerHTML = '<div class="flex flex-col items-center justify-center py-16 gap-4 text-center">'
+      + '<div class="w-20 h-20 rounded-full bg-surface-container flex items-center justify-center">'
+      + '<span class="material-symbols-outlined text-on-surface-variant text-4xl">'
+      + (activeTab === 'upcoming' ? 'notifications_none' : 'task_alt')
+      + '</span></div>'
+      + '<h3 class="text-lg font-bold text-on-surface">'
+      + (activeTab === 'upcoming' ? 'No upcoming reminders' : 'No completed reminders yet')
+      + '</h3>'
+      + '<p class="text-sm text-on-surface-variant max-w-xs">'
+      + (activeTab === 'upcoming' ? 'Set a reminder to stay ahead of your schedule and never miss a thing.' : 'Completed reminders will appear here.')
+      + '</p>'
+      + (activeTab === 'upcoming' ? '<button id="empty-new-reminder" class="vault-gradient text-on-primary px-6 py-2.5 rounded-full font-bold text-sm hover:opacity-90 transition-all">Set First Reminder</button>' : '')
       + '</div>'
+
+    document.getElementById('empty-new-reminder')?.addEventListener('click', openModal)
     return
   }
 
-  let html = '<div class="space-y-4">'
+  let html = '<div class="space-y-3">'
 
   filtered.forEach(reminder => {
     const dt = new Date(reminder.datetime)
     const isOverdue = !reminder.completed && dt < new Date()
-    const timeStr = dt.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    const timeStr = dt.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-    const dotColor = isOverdue
-      ? 'bg-error'
-      : reminder.recurring
-        ? 'bg-tertiary'
-        : 'bg-primary'
+    const badgeClass = reminder.completed
+      ? 'bg-tertiary-container/30 text-tertiary'
+      : isOverdue
+        ? 'bg-error-container/20 text-error'
+        : 'bg-primary-container/20 text-primary'
 
-    html += '<div class="bg-surface-container-lowest p-6 rounded-xl flex items-start gap-5 group hover:shadow-sm transition-all">'
-      + '<div class="w-12 h-12 rounded-xl bg-primary-container/20 flex items-center justify-center text-primary shrink-0">'
+    const badgeText = reminder.completed
+      ? 'Done'
+      : isOverdue
+        ? 'Overdue'
+        : reminder.recurring
+          ? reminder.recurrenceType
+          : 'One-time'
+
+    const iconColor = reminder.completed
+      ? 'bg-tertiary-container/30 text-tertiary'
+      : isOverdue
+        ? 'bg-error-container/20 text-error'
+        : 'bg-primary-container/20 text-primary'
+
+    html += '<div class="bg-surface-container-lowest p-6 rounded-xl flex items-start gap-5 group hover:shadow-sm transition-all'
+      + (isOverdue ? ' border-l-4 border-error' : !reminder.completed ? ' border-l-4 border-primary' : '') + '">'
+      + '<div class="w-12 h-12 rounded-xl ' + iconColor + ' flex items-center justify-center shrink-0">'
       + '<span class="material-symbols-outlined">notifications_active</span></div>'
       + '<div class="flex-1 min-w-0">'
-      + '<div class="flex items-start justify-between gap-4">'
+      + '<div class="flex items-start justify-between gap-4 mb-1">'
       + '<h4 class="font-bold text-on-surface ' + (reminder.completed ? 'line-through opacity-50' : '') + '">' + reminder.title + '</h4>'
-      + '<span class="text-[10px] px-2 py-0.5 font-bold rounded-full whitespace-nowrap '
-      + (reminder.completed ? 'bg-tertiary-container/30 text-tertiary' : isOverdue ? 'bg-error-container/20 text-error' : 'bg-primary-container/20 text-primary') + '">'
-      + (reminder.completed ? 'Done' : isOverdue ? 'Overdue' : reminder.recurring ? reminder.recurrenceType : 'Once')
-      + '</span>'
+      + '<span class="text-[10px] px-2 py-0.5 font-bold rounded-full whitespace-nowrap ' + badgeClass + '">' + badgeText + '</span>'
       + '</div>'
-      + '<div class="flex items-center gap-2 mt-1">'
-      + '<span class="material-symbols-outlined text-xs text-on-surface-variant">schedule</span>'
-      + '<span class="text-xs text-on-surface-variant">' + timeStr + '</span>'
+      + '<div class="flex items-center gap-1 text-xs text-on-surface-variant">'
+      + '<span class="material-symbols-outlined text-xs">schedule</span>'
+      + timeStr
       + '</div>'
-      + (reminder.notes ? '<p class="text-xs text-on-surface-variant mt-2">' + reminder.notes + '</p>' : '')
+      + (reminder.notes ? '<p class="text-xs text-on-surface-variant mt-2 bg-surface-container p-2 rounded-lg">' + reminder.notes + '</p>' : '')
       + '<div class="flex items-center gap-4 mt-4">'
       + (!reminder.completed
         ? '<button class="complete-reminder-btn text-xs font-bold text-primary flex items-center gap-1 hover:underline" data-id="' + reminder._id + '">'
           + '<span class="material-symbols-outlined text-sm">check_circle</span> Mark Done</button>'
         : '')
-      + '<button class="delete-reminder-btn text-xs font-medium text-error flex items-center gap-1 hover:underline opacity-0 group-hover:opacity-100 transition-opacity" data-id="' + reminder._id + '">'
+      + '<button class="delete-reminder-btn text-xs font-medium text-error flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" data-id="' + reminder._id + '">'
       + '<span class="material-symbols-outlined text-sm">delete</span> Delete</button>'
       + '</div>'
       + '</div>'
@@ -182,6 +231,13 @@ function attachEvents() {
   document.getElementById('save-reminder-btn')?.addEventListener('click', saveReminder)
   document.getElementById('fab')?.addEventListener('click', openModal)
 
+  document.getElementById('recurring-toggle')?.addEventListener('click', (e) => {
+    if (e.target.tagName === 'INPUT') return
+    const cb = document.getElementById('reminder-recurring')
+    cb.checked = !cb.checked
+    document.getElementById('recurrence-options')?.classList.toggle('hidden', !cb.checked)
+  })
+
   document.getElementById('reminder-recurring')?.addEventListener('change', (e) => {
     document.getElementById('recurrence-options')?.classList.toggle('hidden', !e.target.checked)
   })
@@ -189,7 +245,6 @@ function attachEvents() {
   document.getElementById('reminders-list')?.addEventListener('click', async (e) => {
     const completeBtn = e.target.closest('.complete-reminder-btn')
     const deleteBtn = e.target.closest('.delete-reminder-btn')
-
     if (completeBtn) await completeReminder(completeBtn.dataset.id)
     if (deleteBtn && confirm('Delete this reminder?')) await deleteReminder(deleteBtn.dataset.id)
   })
@@ -198,8 +253,8 @@ function attachEvents() {
 function openModal() {
   const now = new Date()
   now.setMinutes(now.getMinutes() + 30)
-  const localStr = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
-  document.getElementById('reminder-datetime').value = localStr
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+  document.getElementById('reminder-datetime').value = local
   document.getElementById('reminder-modal')?.classList.remove('hidden')
   document.getElementById('reminder-title')?.focus()
 }
@@ -208,6 +263,7 @@ function closeModal() {
   document.getElementById('reminder-modal')?.classList.add('hidden')
   document.getElementById('reminder-title').value = ''
   document.getElementById('reminder-notes').value = ''
+  document.getElementById('reminder-datetime').value = ''
   document.getElementById('reminder-recurring').checked = false
   document.getElementById('recurrence-options')?.classList.add('hidden')
   document.getElementById('reminder-form-error')?.classList.add('hidden')
@@ -240,7 +296,7 @@ async function saveReminder() {
     allReminders.unshift(res.data)
     closeModal()
     setActiveTab('upcoming')
-    renderRemindersList()
+    renderPage()
   } catch (err) {
     errorBox.textContent = err.message
     errorBox.classList.remove('hidden')
@@ -254,9 +310,9 @@ async function completeReminder(id) {
     const res = await api.reminders.update(id, { completed: true })
     const idx = allReminders.findIndex(r => r._id === id)
     if (idx !== -1) allReminders[idx] = res.data
-    renderRemindersList()
+    renderPage()
   } catch (err) {
-    alert('Failed to update reminder: ' + err.message)
+    alert('Failed: ' + err.message)
   }
 }
 
@@ -264,9 +320,9 @@ async function deleteReminder(id) {
   try {
     await api.reminders.delete(id)
     allReminders = allReminders.filter(r => r._id !== id)
-    renderRemindersList()
+    renderPage()
   } catch (err) {
-    alert('Failed to delete reminder: ' + err.message)
+    alert('Failed: ' + err.message)
   }
 }
 

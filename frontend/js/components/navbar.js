@@ -5,6 +5,8 @@ export function renderNavbar({ placeholder = 'Search your sanctuary...', createL
   const topBar = document.getElementById('top-bar')
   if (!topBar) return
 
+  const isDark = document.documentElement.classList.contains('dark')
+
   topBar.innerHTML = `
     <div class="flex items-center bg-surface-container-low px-4 py-2 rounded-full w-96 focus-within:ring-2 focus-within:ring-blue-500/20 transition-all">
       <span class="material-symbols-outlined text-outline-variant text-xl mr-2">search</span>
@@ -12,7 +14,14 @@ export function renderNavbar({ placeholder = 'Search your sanctuary...', createL
              type="text" placeholder="${placeholder}" id="global-search">
     </div>
 
-    <div class="flex items-center gap-4">
+    <div class="flex items-center gap-3">
+      <!-- Dark mode toggle -->
+      <button id="dark-mode-toggle"
+              class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors"
+              title="Toggle dark mode">
+        <span class="material-symbols-outlined text-on-surface-variant">${isDark ? 'light_mode' : 'dark_mode'}</span>
+      </button>
+
       <button class="relative w-10 h-10 flex items-center justify-center rounded-full hover:bg-surface-container transition-colors"
               id="notif-btn" onclick="window.location.href='/pages/notifications.html'">
         <span class="material-symbols-outlined text-on-surface-variant">notifications</span>
@@ -29,8 +38,20 @@ export function renderNavbar({ placeholder = 'Search your sanctuary...', createL
     </div>
   `
 
+  // Dark mode toggle logic
+  document.getElementById('dark-mode-toggle')?.addEventListener('click', () => {
+    const html = document.documentElement
+    html.classList.toggle('dark')
+    localStorage.setItem('gv_dark_mode', html.classList.contains('dark') ? 'true' : 'false')
+    // Update icon
+    const icon = document.querySelector('#dark-mode-toggle .material-symbols-outlined')
+    if (icon) icon.textContent = html.classList.contains('dark') ? 'light_mode' : 'dark_mode'
+  })
+
   if (isLoggedIn()) checkUnreadNotifications()
 }
+
+ 
 
 async function checkUnreadNotifications() {
   try {

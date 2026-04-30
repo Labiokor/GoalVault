@@ -1,16 +1,28 @@
-// ENTRY POINT
 import '../css/main.css'
 import { renderSidebar } from './components/sidebar.js'
 import { renderNavbar } from './components/navbar.js'
-import { requireAuth, isLoggedIn } from './utils/helpers.js'
+import { isLoggedIn, clearAuth } from './utils/helpers.js'
+
+// Restore dark mode preference
+if (localStorage.getItem('gv_dark_mode') === 'true') {
+  document.documentElement.classList.add('dark')
+}
 
 const page = document.body.dataset.page || ''
 const publicPages = ['login', 'register']
 
-if (!publicPages.includes(page)) {
-  requireAuth()
-  renderSidebar(page)
-  renderNavbar({ placeholder: getPlaceholder(page) })
+if (publicPages.includes(page)) {
+  // Always clear auth when visiting login/register
+  // This forces user to login every time they visit
+  clearAuth()
+} else {
+  // On protected pages — if not logged in go to login
+  if (!isLoggedIn()) {
+    window.location.href = '/login.html'
+  } else {
+    renderSidebar(page)
+    renderNavbar({ placeholder: getPlaceholder(page) })
+  }
 }
 
 function getPlaceholder(page) {

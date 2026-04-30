@@ -12,6 +12,15 @@ async function request(method, path, body = null) {
   })
 
   const data = await res.json()
+
+  // Auto logout on auth errors
+  if (res.status === 401) {
+    localStorage.removeItem('gv_token')
+    localStorage.removeItem('gv_user')
+    window.location.href = '/login.html'
+    return
+  }
+
   if (!res.ok) throw new Error(data.message || 'Request failed')
   return data
 }
@@ -48,19 +57,19 @@ export const api = {
     delete:  (id)          => request('DELETE', `/notes/${id}`),
   },
   finance: {
-    getWallets:       ()               => request('GET', '/finance/wallets'),
-    createWallet:     (body)           => request('POST', '/finance/wallets', body),
-    updateWallet:     (id, body)       => request('PUT', `/finance/wallets/${id}`, body),
-    deleteWallet:     (id)             => request('DELETE', `/finance/wallets/${id}`),
-    getTransactions:  (params = '')    => request('GET', `/finance/transactions${params}`),
-    addTransaction:   (body)           => request('POST', '/finance/transactions', body),
-    deleteTransaction:(id)             => request('DELETE', `/finance/transactions/${id}`),
-    getSummary:       ()               => request('GET', '/finance/summary'),
-    getBudgets:       ()               => request('GET', '/finance/budgets'),
-    createBudget:     (body)           => request('POST', '/finance/budgets', body),
-    updateBudget:     (id, body)       => request('PUT', `/finance/budgets/${id}`, body),
-    deleteBudget:     (id)             => request('DELETE', `/finance/budgets/${id}`),
-    checkPrompt:      (body)           => request('POST', '/finance/budgets/prompt', body),
+    getWallets:        ()            => request('GET', '/finance/wallets'),
+    createWallet:      (body)        => request('POST', '/finance/wallets', body),
+    updateWallet:      (id, body)    => request('PUT', `/finance/wallets/${id}`, body),
+    deleteWallet:      (id)          => request('DELETE', `/finance/wallets/${id}`),
+    getTransactions:   (params = '') => request('GET', `/finance/transactions${params}`),
+    addTransaction:    (body)        => request('POST', '/finance/transactions', body),
+    deleteTransaction: (id)          => request('DELETE', `/finance/transactions/${id}`),
+    getSummary:        ()            => request('GET', '/finance/summary'),
+    getBudgets:        ()            => request('GET', '/finance/budgets'),
+    createBudget:      (body)        => request('POST', '/finance/budgets', body),
+    updateBudget:      (id, body)    => request('PUT', `/finance/budgets/${id}`, body),
+    deleteBudget:      (id)          => request('DELETE', `/finance/budgets/${id}`),
+    checkPrompt:       (body)        => request('POST', '/finance/budgets/prompt', body),
   },
   reminders: {
     getAll:  (params = '') => request('GET', `/reminders${params}`),

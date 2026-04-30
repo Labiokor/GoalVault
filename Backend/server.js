@@ -34,8 +34,8 @@ app.use('/api/auth', authRoutes);
 app.use('/api/goals', goalsRoutes);
 app.use('/api/habits', habitsRoutes);
 app.use('/api/notes', notesRoutes);
-app.use('/api/notifications', notificationRoutes);
-app.use('/api/reminders', reminderRoutes);
+app.use('/api/notification', notificationRoutes);
+app.use('/api/reminder', reminderRoutes);
 app.use('/api/tasks', tasksRoutes);
 
 // Start server

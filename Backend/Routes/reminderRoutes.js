@@ -1,6 +1,6 @@
 const router = require('express').Router()
 
-const {createReminder,getReminders,updateReminder,deleteReminder} = require('../controllers/remindersController')
+const {createReminder,getReminders,updateReminder,deleteReminder} = require('../controllers/reminderController')
 
 const auth = require('../middleware/authMiddleware')
 

@@ -24,41 +24,42 @@ function renderPage() {
   const high = allTasks.filter(t => t.priority === 'high' && t.status !== 'done').length
   const firstName = user.name ? user.name.split(' ')[0] : 'there'
 
+  const heroMessage = allTasks.length === 0
+    ? 'You have no tasks yet. Create your first task and start getting things done.'
+    : pending + ' task' + (pending !== 1 ? 's' : '') + ' remaining' + (high > 0 ? ' — ' + high + ' high priority' : '') + '. You can do this!'
+
+  const heroTitle = allTasks.length === 0
+    ? 'Ready to be productive, ' + firstName + '?'
+    : 'Keep pushing, ' + firstName + '!'
+
   root.innerHTML = `
     <div class="max-w-5xl mx-auto">
 
-      <!-- Welcome Hero -->
-      <div class="vault-gradient rounded-xl p-8 text-on-primary relative overflow-hidden mb-8">
+      <div class="rounded-xl p-8 text-white relative overflow-hidden mb-8"
+           style="background:linear-gradient(135deg,#ec4899 0%,#be185d 100%)">
         <div class="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full -mr-24 -mt-24"></div>
         <div class="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full -ml-12 -mb-12"></div>
         <div class="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <p class="text-on-primary/70 font-bold uppercase tracking-widest text-xs mb-2">Task Manager</p>
-            <h2 class="text-3xl font-extrabold font-headline tracking-tight mb-2">
-              ${allTasks.length === 0 ? 'Ready to be productive, ' + firstName + '?' : 'Keep pushing, ' + firstName + '!'}
-            </h2>
-            <p class="text-on-primary/80 text-sm">
-              ${allTasks.length === 0
-                ? 'You have no tasks yet. Create your first task and start getting things done.'
-                : pending + ' task' + (pending !== 1 ? 's' : '') + ' remaining' + (high > 0 ? ' — ' + high + ' high priority' : '') + '. You can do this!'}
-            </p>
+            <p class="text-white/70 font-bold uppercase tracking-widest text-xs mb-2">Task Manager</p>
+            <h2 class="text-3xl font-extrabold font-headline tracking-tight mb-2">${heroTitle}</h2>
+            <p class="text-white/80 text-sm">${heroMessage}</p>
           </div>
           <button id="open-task-modal"
-                  class="bg-white/20 hover:bg-white/30 text-on-primary px-6 py-3 rounded-full font-bold text-sm flex items-center gap-2 transition-all shrink-0">
+                  class="bg-white/20 hover:bg-white/30 text-white px-6 py-3 rounded-full font-bold text-sm flex items-center gap-2 transition-all shrink-0">
             <span class="material-symbols-outlined text-sm">add_task</span>
             New Task
           </button>
         </div>
       </div>
 
-      <!-- Stats -->
       <div class="grid grid-cols-3 gap-4 mb-8">
         <div class="bg-surface-container-lowest p-5 rounded-xl text-center ring-1 ring-outline-variant/5">
           <p class="text-2xl font-black font-headline text-on-surface">${allTasks.length}</p>
           <p class="text-xs text-on-surface-variant uppercase font-bold mt-1">Total</p>
         </div>
         <div class="bg-surface-container-lowest p-5 rounded-xl text-center ring-1 ring-outline-variant/5">
-          <p class="text-2xl font-black font-headline text-primary">${pending}</p>
+          <p class="text-2xl font-black font-headline" style="color:#ec4899">${pending}</p>
           <p class="text-xs text-on-surface-variant uppercase font-bold mt-1">Pending</p>
         </div>
         <div class="bg-surface-container-lowest p-5 rounded-xl text-center ring-1 ring-outline-variant/5">
@@ -67,7 +68,6 @@ function renderPage() {
         </div>
       </div>
 
-      <!-- Filter Tabs -->
       <div class="flex gap-2 mb-6 bg-surface-container-low p-1 rounded-xl w-fit">
         <button class="filter-btn px-5 py-2 rounded-lg text-sm font-bold transition-all" data-filter="all">All</button>
         <button class="filter-btn px-5 py-2 rounded-lg text-sm font-bold transition-all" data-filter="todo">To Do</button>
@@ -75,12 +75,10 @@ function renderPage() {
         <button class="filter-btn px-5 py-2 rounded-lg text-sm font-bold transition-all" data-filter="done">Done</button>
       </div>
 
-      <!-- Task List -->
       <div id="task-list"></div>
 
     </div>
 
-    <!-- Modal -->
     <div id="task-modal" class="fixed inset-0 bg-black/40 z-50 flex items-center justify-center hidden">
       <div class="bg-surface-container-lowest rounded-xl p-8 w-full max-w-md mx-4 shadow-xl max-h-[90vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-6">
@@ -89,9 +87,7 @@ function renderPage() {
             <span class="material-symbols-outlined">close</span>
           </button>
         </div>
-
         <div id="task-form-error" class="hidden mb-4 p-3 bg-error-container/20 text-error rounded-lg text-sm"></div>
-
         <div class="space-y-4">
           <div>
             <label class="form-label">Task Title</label>
@@ -115,29 +111,27 @@ function renderPage() {
               <input class="form-input" id="task-deadline" type="datetime-local">
             </div>
           </div>
-
-          <!-- Reminder toggles — only show when deadline is set -->
           <div id="reminder-options" class="hidden bg-surface-container-low p-4 rounded-xl space-y-3">
             <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant">Deadline Reminders</p>
-            <p class="text-xs text-on-surface-variant">You will be notified automatically at these intervals before the deadline:</p>
+            <p class="text-xs text-on-surface-variant">Get notified before the deadline:</p>
             <div class="space-y-2">
               <label class="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" id="remind-1hr" class="w-4 h-4 accent-primary" checked>
+                <input type="checkbox" id="remind-1hr" class="w-4 h-4" style="accent-color:#ec4899" checked>
                 <span class="text-sm font-medium text-on-surface">1 hour before</span>
               </label>
               <label class="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" id="remind-30min" class="w-4 h-4 accent-primary" checked>
+                <input type="checkbox" id="remind-30min" class="w-4 h-4" style="accent-color:#ec4899" checked>
                 <span class="text-sm font-medium text-on-surface">30 minutes before</span>
               </label>
               <label class="flex items-center gap-3 cursor-pointer">
-                <input type="checkbox" id="remind-5min" class="w-4 h-4 accent-primary" checked>
+                <input type="checkbox" id="remind-5min" class="w-4 h-4" style="accent-color:#ec4899" checked>
                 <span class="text-sm font-medium text-on-surface">5 minutes before</span>
               </label>
             </div>
           </div>
-
           <button id="save-task-btn"
-                  class="w-full vault-gradient text-on-primary py-3 rounded-xl font-bold text-sm hover:opacity-90 transition-all">
+                  class="w-full text-white py-3 rounded-xl font-bold text-sm hover:opacity-90 transition-all"
+                  style="background:linear-gradient(135deg,#ec4899 0%,#be185d 100%)">
             Create Task
           </button>
         </div>
@@ -168,20 +162,21 @@ function renderTaskList() {
       + '<p class="text-sm text-on-surface-variant max-w-xs">'
       + (activeFilter === 'all' ? 'Tasks help you stay focused. Create your first one and start ticking things off.' : 'Nothing here right now.')
       + '</p>'
-      + (activeFilter === 'all' ? '<button id="empty-new-task" class="vault-gradient text-on-primary px-6 py-2.5 rounded-full font-bold text-sm hover:opacity-90">Create First Task</button>' : '')
+      + (activeFilter === 'all'
+        ? '<button id="empty-new-task" class="text-white px-6 py-2.5 rounded-full font-bold text-sm hover:opacity-90" style="background:linear-gradient(135deg,#ec4899 0%,#be185d 100%)">Create First Task</button>'
+        : '')
       + '</div>'
 
     document.getElementById('empty-new-task')?.addEventListener('click', openModal)
     return
   }
 
-  // Group by status
   const groups = { todo: [], doing: [], done: [] }
   filtered.forEach(t => { if (groups[t.status]) groups[t.status].push(t) })
 
   const groupLabels = { todo: 'To Do', doing: 'In Progress', done: 'Completed' }
   const groupColors = {
-    todo:  'bg-amber-100 text-amber-700',
+    todo:  'bg-pink-100 text-pink-700',
     doing: 'bg-secondary-container text-on-secondary-container',
     done:  'bg-tertiary-container/30 text-tertiary'
   }
@@ -203,15 +198,18 @@ function renderTaskList() {
       if (task.priority === 'medium') pc = 'bg-secondary-container text-on-secondary-container'
 
       const isDone = task.status === 'done'
+      const deadline = task.deadline ? buildDeadlineHTML(task.deadline, isDone) : ''
 
-      const deadline = task.deadline
-        ? buildDeadlineHTML(task.deadline, isDone)
+      const checkboxClass = isDone
+        ? 'border-2 border-pink-400' 
+        : 'border-2 border-pink-200 hover:bg-pink-50'
+
+      const checkboxStyle = isDone
+        ? 'background:#ec4899'
         : ''
 
       html += '<div class="bg-surface-container-lowest p-5 rounded-xl flex items-start gap-4 group hover:shadow-sm transition-all">'
-        + '<button class="toggle-status-btn w-6 h-6 rounded border-2 mt-0.5 shrink-0 flex items-center justify-center transition-all '
-        + (isDone ? 'bg-primary border-primary' : 'border-primary-container hover:bg-primary-container/20')
-        + '" data-id="' + task._id + '" data-status="' + task.status + '">'
+        + '<button class="toggle-status-btn w-6 h-6 rounded mt-0.5 shrink-0 flex items-center justify-center transition-all ' + checkboxClass + '" style="' + checkboxStyle + '" data-id="' + task._id + '" data-status="' + task.status + '">'
         + (isDone ? '<span class="material-symbols-outlined text-xs text-white">check</span>' : '')
         + '</button>'
         + '<div class="flex-1 min-w-0">'
@@ -245,12 +243,15 @@ function buildDeadlineHTML(deadline, isDone) {
 
   if (!isDone) {
     if (diff < 0) {
-      urgencyClass = 'text-error font-bold'
+      urgencyClass = 'font-bold'
       urgencyIcon = 'warning'
+      return '<span class="text-[10px] flex items-center gap-1 ' + urgencyClass + '" style="color:#ec4899">'
+        + '<span class="material-symbols-outlined text-xs">' + urgencyIcon + '</span>'
+        + 'Overdue · ' + dateStr + '</span>'
     } else if (diff < 3600000) {
       urgencyClass = 'text-error'
       urgencyIcon = 'alarm'
-    } else if (diff < 1800000 * 2) {
+    } else if (diff < 7200000) {
       urgencyClass = 'text-amber-600'
       urgencyIcon = 'alarm'
     }
@@ -258,8 +259,7 @@ function buildDeadlineHTML(deadline, isDone) {
 
   return '<span class="text-[10px] flex items-center gap-1 ' + urgencyClass + '">'
     + '<span class="material-symbols-outlined text-xs">' + urgencyIcon + '</span>'
-    + (diff < 0 && !isDone ? 'Overdue · ' : '') + dateStr
-    + '</span>'
+    + dateStr + '</span>'
 }
 
 function setActiveFilter(filter) {
@@ -267,7 +267,11 @@ function setActiveFilter(filter) {
   document.querySelectorAll('.filter-btn').forEach(btn => {
     const isActive = btn.dataset.filter === filter
     btn.className = 'filter-btn px-5 py-2 rounded-lg text-sm font-bold transition-all '
-      + (isActive ? 'bg-surface-container-lowest text-primary shadow-sm' : 'text-on-surface-variant hover:text-on-surface')
+      + (isActive
+        ? 'bg-surface-container-lowest shadow-sm'
+        : 'text-on-surface-variant hover:text-on-surface')
+    if (isActive) btn.style.color = '#ec4899'
+    else btn.style.color = ''
   })
 }
 
@@ -307,7 +311,6 @@ function attachEvents() {
     if (e.key === 'Enter') saveTask()
   })
 
-  // Show reminder options when deadline is set
   document.getElementById('task-deadline')?.addEventListener('change', (e) => {
     const reminderOpts = document.getElementById('reminder-options')
     if (e.target.value) {
@@ -361,7 +364,6 @@ async function saveTask() {
     const res = await api.tasks.create(body)
     allTasks.unshift(res.data)
 
-    // Auto-create reminders if deadline is set
     if (deadline) {
       await createDeadlineReminders(title, deadline)
     }
@@ -378,7 +380,7 @@ async function saveTask() {
 
 async function createDeadlineReminders(taskTitle, deadline) {
   const dt = new Date(deadline)
-  const remind1hr  = document.getElementById('remind-1hr')?.checked
+  const remind1hr   = document.getElementById('remind-1hr')?.checked
   const remind30min = document.getElementById('remind-30min')?.checked
   const remind5min  = document.getElementById('remind-5min')?.checked
 
@@ -400,7 +402,7 @@ async function createDeadlineReminders(taskTitle, deadline) {
     const time = new Date(dt.getTime() - 30 * 60 * 1000)
     if (time > new Date()) {
       reminders.push({
-        title: '30 minutes left — ' + taskTitle,
+        title: '30 mins left — ' + taskTitle,
         datetime: time.toISOString(),
         notes: 'Your task "' + taskTitle + '" is due in 30 minutes.',
         recurring: false
@@ -412,7 +414,7 @@ async function createDeadlineReminders(taskTitle, deadline) {
     const time = new Date(dt.getTime() - 5 * 60 * 1000)
     if (time > new Date()) {
       reminders.push({
-        title: '5 minutes left — ' + taskTitle,
+        title: '5 mins left — ' + taskTitle,
         datetime: time.toISOString(),
         notes: 'Your task "' + taskTitle + '" is due in 5 minutes.',
         recurring: false
@@ -420,7 +422,6 @@ async function createDeadlineReminders(taskTitle, deadline) {
     }
   }
 
-  // Create all reminders in parallel
   await Promise.allSettled(reminders.map(r => api.reminders.create(r)))
 }
 

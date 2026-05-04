@@ -26,7 +26,7 @@ exports.processRecurringReminders = () => {
     try {
       const now = new Date()
 
-      // ✅ Handle recurring reminders — advance to next occurrence
+      //  Handle recurring reminders — advance to next occurrence
       const recurringReminders = await Reminder.find({
         recurring: true,
         datetime: { $lte: now },
@@ -46,7 +46,7 @@ exports.processRecurringReminders = () => {
         )
       }))
 
-      // ✅ Handle one-time reminders — mark as completed
+      // Handle one-time reminders — mark as completed
       const oneTimeReminders = await Reminder.find({
         recurring: false,
         datetime: { $lte: now },
@@ -193,5 +193,5 @@ exports.processRecurringReminders = () => {
     }
   })
 
-  console.log('All schedulers started ✅')
+  console.log('All schedulers started ')
 }

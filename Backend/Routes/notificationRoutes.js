@@ -1,21 +1,21 @@
 const router = require('express').Router()
 
 const {
-  getNotification,
-  getUnreadNotification,
+  getNotifications,
+  getUnreadNotifications,
   markAsRead,
   markAllAsRead,
   deleteNotification,
-  deleteAllNotification
+  deleteAllNotifications
 } = require('../controllers/notificationController')
 
 const auth = require('../middleware/authMiddleware')
 
-router.get('/', auth, getNotification)
-router.get('/unread', auth, getUnreadNotification)
+router.get('/', auth, getNotifications)
+router.get('/unread', auth, getUnreadNotifications)
 router.patch('/:id/read', auth, markAsRead)
 router.patch('/read-all', auth, markAllAsRead)
 router.delete('/:id', auth, deleteNotification)
-router.delete('/', auth, deleteAllNotification)
+router.delete('/', auth, deleteAllNotifications)
 
 module.exports = router

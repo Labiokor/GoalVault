@@ -8,7 +8,7 @@ const NAV_ITEMS = [
   { icon: 'emoji_events',        label: 'Goals',         href: '/pages/goals.html' },
   { icon: 'notifications_active',label: 'Reminders',     href: '/pages/reminders.html' },
   { icon: 'payments',            label: 'Finance',       href: '/pages/finance.html' },
-  { icon: 'notifications',       label: 'Notifications', href: '/pages/notifications.html' },
+  { icon: 'notifications',       label: 'Notifications', href: '/pages/notification.html' },
   { icon: 'settings',            label: 'Settings',      href: '/pages/settings.html' },
 ]
 

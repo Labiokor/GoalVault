@@ -47,7 +47,7 @@ export function renderNavbar({ placeholder = 'Search your sanctuary...', createL
   })
 
   document.getElementById('notif-btn')?.addEventListener('click', () => {
-    window.location.href = '/pages/notifications.html'
+    window.location.href = '/pages/notification.html'
   })
 
   if (isLoggedIn()) {

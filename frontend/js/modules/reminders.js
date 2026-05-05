@@ -11,9 +11,59 @@ async function init() {
     const res = await api.reminders.getAll()
     allReminders = res.data || []
     renderPage()
+    startReminderPolling() //start polling after data loads
   } catch (err) {
     root.innerHTML = '<p class="text-error text-sm p-8">' + err.message + '</p>'
   }
+}
+
+// 2. POLLING — runs every 30 seconds to check for due reminders and show notifications
+async function startReminderPolling() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    await Notification.requestPermission()
+  }
+
+  setInterval(async () => {
+    try {
+      const res = await api.reminders.getAll()
+      allReminders = res.data || []
+
+      const now = new Date()
+
+      for (const reminder of allReminders) {
+        if (reminder.completed) continue
+
+        const dt = new Date(reminder.datetime)
+        const diffMs = dt - now
+        const diffMins = diffMs / 60000
+
+        // Fire when within 1 minute of reminder time
+        if (diffMins >= 0 && diffMins <= 1) {
+          if ('Notification' in window && Notification.permission === 'granted') {
+            new Notification('GoalVault — ' + reminder.title, {
+              body: reminder.notes || 'Your reminder is due now!',
+              icon: '/favicon.ico'
+            })
+          }
+
+          try {
+            await api.reminders.update(reminder._id, { completed: true })
+            const idx = allReminders.findIndex(r => r._id === reminder._id)
+            if (idx !== -1) allReminders[idx].completed = true
+
+            const dot = document.getElementById('notif-dot')
+            if (dot) dot.classList.remove('hidden')
+
+            renderPage()
+          } catch (err) {
+            console.error('Failed to complete reminder:', err.message)
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Reminder poll failed:', err.message)
+    }
+  }, 30000)
 }
 
 function renderPage() {

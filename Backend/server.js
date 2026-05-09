@@ -55,6 +55,10 @@ mongoose.connection.on('error', (err) => {
 
 
 // Routes
+app.get('/', (req, res) => {
+  res.json({ message: 'Welcome to Goal Vault API', status: 'Server is running' });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/goals', goalsRoutes);
 app.use('/api/habits', habitsRoutes);

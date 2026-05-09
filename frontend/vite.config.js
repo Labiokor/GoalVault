@@ -15,18 +15,12 @@ export default defineConfig({
         goals:         resolve(__dirname, 'pages/goals.html'),
         finance:       resolve(__dirname, 'pages/finance.html'),
         reminders:     resolve(__dirname, 'pages/reminders.html'),
-        notifications: resolve(__dirname, 'pages/notifications.html'),
+        notifications: resolve(__dirname, 'pages/notification.html'),
         settings:      resolve(__dirname, 'pages/settings.html'),
       }
     }
   },
   server: {
     port: 3050,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:5000',
-        changeOrigin: true,
-      }
-    }
   }
 })

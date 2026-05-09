@@ -66,24 +66,53 @@ function render(tasks, habits, goals, summary) {
       + '</div>'
     : '<div class="space-y-4">' + taskItems + moreTasksLink + '</div>'
 
-  // ── Habits block ───────────────────────────────────────────────
-  let habitItems = ''
-  habits.slice(0, 4).forEach(habit => {
-    habitItems += '<div class="flex-1 bg-surface-container-low p-4 rounded-xl flex flex-col items-center text-center min-w-[70px]">'
-      + '<span class="material-symbols-outlined text-tertiary mb-1" style="font-variation-settings:\'FILL\' 1">local_fire_department</span>'
-      + '<p class="text-xl font-black font-headline">' + habit.currentstreak + '</p>'
-      + '<p class="text-[10px] text-on-surface-variant uppercase leading-tight truncate w-full">' + habit.name + '</p>'
-      + '</div>'
-  })
+    // ── Habits block — show only top streak habit ──────────────────
+let habitsBlock = ''
 
-  const habitsBlock = habitCount === 0
-    ? '<div class="flex flex-col items-center justify-center py-6 gap-3 text-center">'
-      + '<div class="w-14 h-14 rounded-full bg-secondary-container flex items-center justify-center">'
-      + '<span class="material-symbols-outlined text-secondary text-2xl">repeat</span></div>'
-      + '<p class="text-sm font-medium text-on-surface">No habits tracked yet</p>'
-      + '<a href="/pages/habits.html" class="text-xs font-bold text-primary hover:underline">Start a habit</a>'
-      + '</div>'
-    : '<div class="flex gap-2 flex-wrap">' + habitItems + '</div>'
+if (habitCount === 0) {
+  habitsBlock = '<div class="flex flex-col items-center justify-center py-6 gap-3 text-center">'
+    + '<div class="w-14 h-14 rounded-full bg-secondary-container flex items-center justify-center">'
+    + '<span class="material-symbols-outlined text-secondary text-2xl">repeat</span></div>'
+    + '<p class="text-sm font-medium text-on-surface">No habits tracked yet</p>'
+    + '<a href="/pages/habits.html" class="text-xs font-bold text-primary hover:underline">Start a habit</a>'
+    + '</div>'
+} else {
+  // Find habit with highest current streak
+  const top = habits.reduce((best, h) => {
+    return (h.currentstreak || 0) > (best.currentstreak || 0) ? h : best
+  }, habits[0])
+
+  const streakPct = top.higheststreak > 0
+    ? Math.min(100, Math.round((top.currentstreak / top.higheststreak) * 100))
+    : 100
+
+  const streakColor = top.currentstreak >= 30
+    ? '#ef4444'
+    : top.currentstreak >= 14
+      ? '#005bc4'
+      : '#006d4a'
+
+  habitsBlock = '<div class="flex flex-col gap-4">'
+    + '<div class="flex items-center gap-4 p-4 bg-surface-container-low rounded-xl">'
+    + '<div class="w-12 h-12 rounded-full bg-tertiary-container/30 flex items-center justify-center text-2xl shrink-0">'
+    + (top.icon || '✅') + '</div>'
+    + '<div class="flex-1 min-w-0">'
+    + '<p class="font-bold text-on-surface text-sm truncate">' + top.name + '</p>'
+    + '<div class="flex items-center gap-1 mt-1">'
+    + '<span class="material-symbols-outlined text-sm" style="font-variation-settings:\'FILL\' 1;color:' + streakColor + '">local_fire_department</span>'
+    + '<span class="text-sm font-black" style="color:' + streakColor + '">' + top.currentstreak + ' day streak</span>'
+    + '</div>'
+    + '<div class="w-full h-1.5 rounded-full mt-2" style="background:#e5e9eb">'
+    + '<div class="h-1.5 rounded-full transition-all" style="width:' + streakPct + '%;background:' + streakColor + '"></div>'
+    + '</div>'
+    + '</div>'
+    + '</div>'
+    + (habits.length > 1
+      ? '<a href="/pages/habits.html" class="text-xs text-on-surface-variant text-center hover:text-primary transition-colors">+'
+        + (habits.length - 1) + ' more habit' + (habits.length > 2 ? 's' : '') + ' — View all</a>'
+      : '')
+    + '</div>'
+}
 
   // ── Finance block ──────────────────────────────────────────────
   const financeBlock = !summary.deposit && !summary.expense

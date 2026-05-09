@@ -49,50 +49,78 @@ exports.completeHabit = async (req, res) => {
     const habit = await Habit.findOne({ _id: req.params.id, user: req.user.id })
     if (!habit) return error(res, 'Habit not found', 404)
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+    // Use local date string to avoid timezone issues
+    const todayStr = new Date().toLocaleDateString('en-CA') // YYYY-MM-DD format
 
-    const lastDate = habit.lastCompletedDates ? new Date(habit.lastCompletedDates) : null  // ✅ model name
+    const lastDate = habit.lastCompletedDates
+      ? new Date(habit.lastCompletedDates).toLocaleDateString('en-CA')
+      : null
 
+    // Already completed today
+    if (lastDate === todayStr) {
+      return success(res, habit, 'Habit already completed today')
+    }
+
+    // Calculate streak
     if (lastDate) {
-      lastDate.setHours(0, 0, 0, 0)
-      const diff = (today - lastDate) / (1000 * 60 * 60 * 24)
+      const yesterday = new Date()
+      yesterday.setDate(yesterday.getDate() - 1)
+      const yesterdayStr = yesterday.toLocaleDateString('en-CA')
 
-      if (diff === 1) {
-        habit.currentstreak += 1                                     // ✅ model name
-      } else if (diff > 1) {
-        habit.currentstreak = 1                                      // ✅ model name
+      if (lastDate === yesterdayStr) {
+        // Completed yesterday — increment streak
+        habit.currentstreak += 1
       } else {
-        return success(res, habit, 'Habit already completed today')
+        // Missed a day — reset streak
+        habit.currentstreak = 1
       }
     } else {
-      habit.currentstreak = 1                                        // ✅ model name
+      // First time completing
+      habit.currentstreak = 1
     }
 
-    if (habit.currentstreak > habit.higheststreak) {                 // ✅ model names
-      habit.higheststreak = habit.currentstreak                      // ✅ model names
+    if (habit.currentstreak > habit.higheststreak) {
+      habit.higheststreak = habit.currentstreak
     }
 
-    habit.lastCompletedDates = today                                 // ✅ model name
-    habit.completedDates.push(today)
-    await habit.save()
+    habit.lastCompletedDates = new Date()
+    habit.completedDates.push(new Date())
 
-    const milestones = [7, 14, 21, 30, 60, 90]
-    if (milestones.includes(habit.currentstreak)) {                  // ✅ model name
+    // Check milestone rewards
+    const milestones = [7, 14, 21, 30]
+    if (milestones.includes(habit.currentstreak)) {
       await createNotification(
         req.user.id,
-        'Streak Milestone! 🔥',
-        `You're on a ${habit.currentstreak}-day streak for "${habit.name}". Keep it up!`,
+        getMilestoneTitle(habit.currentstreak),
+        getMilestoneMessage(habit.currentstreak, habit.name),
         'habit',
         { model: 'Habit', documentId: habit._id }
       )
     }
 
+    await habit.save()
     success(res, habit, 'Habit completed')
   } catch (err) {
     error(res, err.message, 500)
   }
 }
+
+function getMilestoneTitle(streak) {
+  if (streak === 7)  return '7-Day Streak! 🏆'
+  if (streak === 14) return '14-Day Streak! 🏅'
+  if (streak === 21) return '21-Day Streak! ⭐'
+  if (streak === 30) return '30-Day Streak! 💎'
+  return streak + '-Day Streak!'
+}
+
+function getMilestoneMessage(streak, habitName) {
+  if (streak === 7)  return 'You earned a Trophy! You have been consistent with "' + habitName + '" for 7 days. Keep going!'
+  if (streak === 14) return 'You earned a Badge! 14 days of "' + habitName + '". You are building a real habit!'
+  if (streak === 21) return 'You earned a Star! 21 days of "' + habitName + '". Science says this is now a habit!'
+  if (streak === 30) return 'You earned a Diamond! 30 days of "' + habitName + '". You are unstoppable!'
+  return 'Amazing streak on "' + habitName + '"!'
+}
+
 
 exports.deleteHabit = async (req, res) => {
   try {

@@ -15,7 +15,14 @@ const { processRecurringReminders } = require('./Utils/ReminderScheduler');
 const app = express();
 
 // Middlewares
-app.use(cors());
+app.use(cors({
+   origin: [
+    'http://localhost:3000',
+    'http://localhost:3050',
+    'https://goal-vault-chi.vercel.app/'
+  ],
+  credentials: true
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

@@ -16,10 +16,11 @@ const app = express();
 
 // Middlewares
 app.use(cors({
-   origin: [
+  origin: [
     'http://localhost:3000',
     'http://localhost:3050',
-    'https://goal-vault-chi.vercel.app/'
+    'https://goal-vault-chi.vercel.app',
+    'https://goalvault-5sbh.onrender.com'
   ],
   credentials: true
 }));

@@ -15,15 +15,24 @@ const { processRecurringReminders } = require('./Utils/ReminderScheduler');
 const app = express();
 
 // Middlewares
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:3050',
+  'https://goal-vault-chi.vercel.app',
+  'https://goal-vault-exshe44p8-cy-dev-s-projects.vercel.app',
+  'https://goalvault-5sbh.onrender.com'
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:3050',
-    'https://goal-vault-chi.vercel.app',
-    'https://goalvault-5sbh.onrender.com'
-  ],
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    callback(new Error('Not allowed by CORS'));
+  },
   credentials: true
 }));
+app.options('*', cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

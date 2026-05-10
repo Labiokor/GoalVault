@@ -1,4 +1,5 @@
-require('dotenv').config({ path: './config.env' });
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, 'config.env') });
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -32,6 +33,13 @@ const allowedOrigins = [
   'https://goal-vault-lst876crh-cy-dev-s-projects.vercel.app',
   'https://goalvault-5sbh.onrender.com'
 ];
+
+const requiredEnvs = ['ATLAS_URI', 'JWT_SECRET'];
+const missingEnvs = requiredEnvs.filter(name => !process.env[name]);
+if (missingEnvs.length) {
+  console.error(`Missing required environment variables: ${missingEnvs.join(', ')}`);
+  process.exit(1);
+}
 
 // Mongoose connection
 mongoose.connect(process.env.ATLAS_URI, {

@@ -14,6 +14,15 @@ const { processRecurringReminders } = require('./Utils/ReminderScheduler');
 
 const app = express();
 
+app.use(cors({
+  origin: true,
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 // Middlewares
 const allowedOrigins = [
   'http://localhost:3000',
@@ -23,15 +32,6 @@ const allowedOrigins = [
   'https://goal-vault-lst876crh-cy-dev-s-projects.vercel.app',
   'https://goalvault-5sbh.onrender.com'
 ];
-
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // Mongoose connection
 mongoose.connect(process.env.ATLAS_URI, {

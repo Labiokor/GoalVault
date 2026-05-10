@@ -20,6 +20,7 @@ const allowedOrigins = [
   'http://localhost:3050',
   'https://goal-vault-chi.vercel.app',
   'https://goal-vault-exshe44p8-cy-dev-s-projects.vercel.app',
+  'https://goal-vault-lst876crh-cy-dev-s-projects.vercel.app',
   'https://goalvault-5sbh.onrender.com'
 ];
 

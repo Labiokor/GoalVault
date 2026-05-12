@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goal Vault – Notebook</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="brand-top-left">
+            <h1>GOAL VAULT</h1>
+            <p><strong>Plan.Focus.Achieve</strong></p>
+        </div>
+    </header>
+
+    <div class="user-top-right">
+        <button id="darkModeBtn" title="Toggle dark mode"></button>
+        <div id="streakMenu" title="current streak">
+            <span class="streak-icon">🔥</span>
+            <span class="streak-count">0</span>
+            <span class="streak-tooltip">Current streak: 0 days</span>
+        </div>
+    </div>
+
+    <nav class="nav_bottom">
+    <div class="nav-item">
+        <a href="index.html">
+            <i class="fa-solid fa-chart-line"></i>Dashboard
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="planner.html">
+            <i class="fa-solid fa-calendar-check"></i>Goals
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="habits.html">
+            <i class="fa-solid fa-check"></i>Habits
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="notebook.html">
+            <i class="fas fa-sticky-note"></i>Notebook
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="tasks.html">
+            <i class="fa-solid fa-list-check"></i>Tasks
+        </a>
+    </div>
+    <div class="nav-item" style="position:relative;">
+        <a href="notifications.html" style="position:relative;">
+            <i class="fa-solid fa-bell"></i>
+            <span class="notif-nav-badge" id="notifNavBadge"></span>
+            Alerts
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="reminders.html">
+            <i class="fa-solid fa-clock-rotate-left"></i>Reminders
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="account.html">
+            <i class="fa-solid fa-user"></i>My Account
+        </a>
+    </div>
+</nav>
+
+    <!-- ✅ Notebook uses its own wrapper -->
+    <div class="notebook-page-wrapper">
+        <div class="notes-app">
+
+            <!-- Sidebar -->
+            <div class="notes-sidebar">
+                <div class="notes-sidebar-header">
+                    <div class="notes-sidebar-title">📓 Notes</div>
+                    <div class="notes-search-bar">
+                        <span class="notes-search-icon">
+                            <i class="fa-solid fa-magnifying-glass"></i>
+                        </span>
+                        <input
+                            type="text"
+                            id="noteSearchInput"
+                            placeholder="Search notes..."
+                        >
+                    </div>
+                </div>
+
+                <div class="notes-category-tabs" id="notesCategoryTabs">
+                    <button class="notes-cat-tab active" data-filter="all">All</button>
+                    <button class="notes-cat-tab" data-filter="general">General</button>
+                    <button class="notes-cat-tab" data-filter="work">Work</button>
+                    <button class="notes-cat-tab" data-filter="personal">Personal</button>
+                    <button class="notes-cat-tab" data-filter="school">School</button>
+                </div>
+
+                <div class="notes-list" id="notesList"></div>
+
+                <div class="notes-sidebar-footer">
+                    <button class="notes-new-btn" id="newNoteBtn">
+                        <i class="fa-solid fa-plus"></i> New Note
+                    </button>
+                </div>
+            </div>
+
+            <!-- Editor -->
+            <div class="notes-editor-pane">
+                <div id="notesEmptyState" class="notes-empty-state">
+                    <div class="notes-empty-icon">📝</div>
+                    <div class="notes-empty-title">No note selected</div>
+                    <div class="notes-empty-sub">
+                        Pick a note from the list or create a new one
+                    </div>
+                    <button class="notes-empty-btn" id="newNoteBtnAlt">
+                        <i class="fa-solid fa-plus"></i> New Note
+                    </button>
+                </div>
+
+                <div id="notesEditorContent"
+                     class="notes-editor-inner"
+                     style="display:none;">
+
+                    <div class="notes-editor-toolbar">
+                        <select id="noteCategorySelect" class="notes-cat-select">
+                            <option value="general">📁 General</option>
+                            <option value="work">💼 Work</option>
+                            <option value="personal">🙂 Personal</option>
+                            <option value="school">🎓 School</option>
+                        </select>
+                        <div class="notes-toolbar-right">
+                            <button id="notesSaveBtn"
+                                    class="notes-toolbar-btn"
+                                    title="Save note">
+                                <i class="fa-solid fa-check"></i> Save
+                            </button>
+                            <button id="notesDeleteBtn"
+                                    class="notes-toolbar-btn notes-toolbar-btn-danger"
+                                    title="Delete note">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="notes-editor-meta" id="notesEditorMeta"></div>
+
+                    <input
+                        type="text"
+                        class="notes-title-input"
+                        id="noteTitleInput"
+                        placeholder="Note title..."
+                    >
+                    <textarea
+                        class="notes-body-input"
+                        id="noteBodyInput"
+                        placeholder="Start writing your thoughts...">
+                    </textarea>
+
+                </div>
+            </div>
+
+        </div>
+    </div>
+    <!-- ── Confirm Delete Modal ── -->
+<div id="confirmModal" style="display:none;">
+    <div class="confirm-backdrop"></div>
+    <div class="confirm-box">
+        <div class="confirm-icon">🗑️</div>
+        <h3 class="confirm-title">Are you sure?</h3>
+        <p class="confirm-msg" id="confirmMsg">
+            This action cannot be undone.
+        </p>
+        <div class="confirm-actions">
+            <button class="confirm-cancel" id="confirmCancel">
+                Cancel
+            </button>
+            <button class="confirm-delete" id="confirmDelete">
+                Delete
+            </button>
+        </div>
+    </div>
+</div>
+
+    <script src="app.js"></script>
+</body>
+</html>

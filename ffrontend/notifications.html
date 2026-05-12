@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goal Vault – Notifications</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="brand-top-left">
+            <h1>GOAL VAULT</h1>
+            <p><strong>Plan.Focus.Achieve</strong></p>
+        </div>
+    </header>
+
+    <div class="user-top-right">
+        <button id="darkModeBtn" title="Toggle dark mode"></button>
+        <div id="streakMenu" title="current streak">
+            <span class="streak-icon">🔥</span>
+            <span class="streak-count">0</span>
+            <span class="streak-tooltip">Current streak: 0 days</span>
+        </div>
+    </div>
+
+    <nav class="nav_bottom">
+        <div class="nav-item">
+            <a href="index.html">
+                <i class="fa-solid fa-chart-line"></i>Dashboard
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="planner.html">
+                <i class="fa-solid fa-calendar-check"></i>Goals
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="habits.html">
+                <i class="fa-solid fa-check"></i>Habits
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="notebook.html">
+                <i class="fas fa-sticky-note"></i>Notebook
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="tasks.html">
+                <i class="fa-solid fa-list-check"></i>Tasks
+            </a>
+        </div>
+        <div class="nav-item" style="position:relative;">
+            <a href="notifications.html" style="position:relative;">
+                <i class="fa-solid fa-bell"></i>
+                <span class="notif-nav-badge" id="notifNavBadge"></span>
+                Alerts
+            </a>
+        </div>
+        <div class="nav-item">
+        <a href="reminders.html">
+            <i class="fa-solid fa-clock-rotate-left"></i>Reminders
+        </a>
+    </div>
+        <div class="nav-item">
+            <a href="account.html">
+                <i class="fa-solid fa-user"></i>My Account
+            </a>
+        </div>
+    </nav>
+
+    <div id="notificationsSection" class="section">
+
+        <!-- Header -->
+        <div class="notif-page-header">
+            <div class="notif-header-left">
+                <h2>Notifications</h2>
+                <p class="subtitle">Your activity log — everything that's happened in Goal Vault.</p>
+            </div>
+            <div class="notif-header-actions">
+                <button class="notif-filter-btn active" data-filter="all">All</button>
+                <button class="notif-filter-btn" data-filter="task">Tasks</button>
+                <button class="notif-filter-btn" data-filter="habit">Habits</button>
+                <button class="notif-filter-btn" data-filter="reminder">Reminders</button>
+                <button class="notif-filter-btn" data-filter="note">Notes</button>
+                <button class="notif-filter-btn" data-filter="streak">Streak</button>
+                <button class="notif-filter-btn" data-filter="system">System</button>
+            </div>
+        </div>
+
+        <!-- Unread banner -->
+        <div class="notif-unread-banner" id="notifUnreadBanner" style="display:none;">
+            <span class="notif-unread-dot"></span>
+            <span id="notifUnreadText">You have unread notifications</span>
+            <button id="markAllReadBtn">Mark all as read</button>
+        </div>
+
+        <!-- Clear all -->
+        <div class="notif-toolbar">
+            <span class="notif-count-label" id="notifCountLabel">0 notifications</span>
+            <button class="notif-clear-btn" id="clearAllNotifs">
+                <i class="fa-solid fa-trash"></i> Clear All
+            </button>
+        </div>
+
+        <!-- Notifications list -->
+        <div class="notif-list" id="notifList"></div>
+
+    </div>
+
+    <!-- Confirm Delete Modal -->
+    <div id="confirmModal" style="display:none;">
+        <div class="confirm-backdrop"></div>
+        <div class="confirm-box">
+            <div class="confirm-icon">🗑️</div>
+            <h3 class="confirm-title">Are you sure?</h3>
+            <p class="confirm-msg" id="confirmMsg">This action cannot be undone.</p>
+            <div class="confirm-actions">
+                <button class="confirm-cancel" id="confirmCancel">Cancel</button>
+                <button class="confirm-delete" id="confirmDelete">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

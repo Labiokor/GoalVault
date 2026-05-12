@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goal Vault – Planner</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <header>
+        <div class="brand-top-left">
+            <h1>GOAL VAULT</h1>
+            <p><strong>Plan.Focus.Achieve</strong></p>
+        </div>
+    </header>
+
+    <div class="user-top-right">
+        <button id="darkModeBtn" title="Toggle dark mode"></button>
+        <div id="streakMenu" title="current streak">
+            <span class="streak-icon">🔥</span>
+            <span class="streak-count">0</span>
+            <span class="streak-tooltip">Current streak: 0 days</span>
+        </div>
+    </div>
+
+    <nav class="nav_bottom">
+        <div class="nav-item">
+            <a href="index.html">
+                <i class="fa-solid fa-chart-line"></i>Dashboard
+            </a>
+        </div>
+        <div class="nav-item active">
+            <a href="planner.html">
+                <i class="fa-solid fa-calendar-check"></i>Goals
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="habits.html">
+                <i class="fa-solid fa-check"></i>Habits
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="notebook.html">
+                <i class="fas fa-sticky-note"></i>Notebook
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="tasks.html">
+                <i class="fa-solid fa-list-check"></i>Tasks
+            </a>
+        </div>
+        <div class="nav-item" style="position:relative;">
+            <a href="notifications.html" style="position:relative;">
+                <i class="fa-solid fa-bell"></i>
+                <span class="notif-nav-badge" id="notifNavBadge"></span>
+                Alerts
+            </a>
+        </div>
+        <div class="nav-item">
+        <a href="reminders.html">
+            <i class="fa-solid fa-clock-rotate-left"></i>Reminders
+        </a>
+    </div>
+        <div class="nav-item">
+            <a href="account.html">
+                <i class="fa-solid fa-user"></i>My Account
+            </a>
+        </div>
+    </nav>
+
+    <div class="planner-page-wrapper">
+        <div class="planner-inner">
+
+            <!-- Hero Banner -->
+            <div class="goal-hero">
+                <div class="goal-hero-left">
+                    <div class="goal-hero-eyebrow" id="goalHeroEyebrow">MONDAY</div>
+                    <h2 class="goal-hero-title">
+                        Keep your eyes on the prize,
+                        <span id="goalHeroUser">there</span>!
+                    </h2>
+                    <p class="goal-hero-sub" id="goalHeroSub">
+                        No goals yet — add one to get started.
+                    </p>
+                </div>
+                <button class="goal-hero-btn" id="openGoalTypeModal">
+                    <i class="fa-solid fa-plus"></i> New Goal
+                </button>
+            </div>
+
+            <!-- Stats Row -->
+            <div class="goal-stats-row">
+                <div class="goal-stat-card">
+                    <div class="goal-stat-num" id="statActive">0</div>
+                    <div class="goal-stat-label">ACTIVE</div>
+                </div>
+                <div class="goal-stat-divider"></div>
+                <div class="goal-stat-card">
+                    <div class="goal-stat-num completed" id="statCompleted">0</div>
+                    <div class="goal-stat-label">COMPLETED</div>
+                </div>
+                <div class="goal-stat-divider"></div>
+                <div class="goal-stat-card">
+                    <div class="goal-stat-num progress" id="statAvgProgress">0%</div>
+                    <div class="goal-stat-label">AVG PROGRESS</div>
+                </div>
+            </div>
+
+            <!-- Goals List -->
+            <div class="planner-goals-wrap">
+                <div class="planner-tabs">
+                    <button class="planner-tab active" data-tab="all">All</button>
+                    <button class="planner-tab" data-tab="short">Short-Term</button>
+                    <button class="planner-tab" data-tab="long">Long-Term</button>
+                    <button class="planner-tab" data-tab="completed">Completed</button>
+                </div>
+                <div class="planner-list" id="plannerList"></div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         GOAL TYPE PICKER MODAL
+    ══════════════════════════════════════════ -->
+    <div class="goal-modal-overlay" id="goalTypeOverlay">
+        <div class="goal-modal goal-type-modal">
+            <div class="goal-modal-header">
+                <h3 class="goal-modal-title">New Goal</h3>
+                <button class="goal-modal-close" id="closeTypeModal">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="goal-modal-body">
+                <p class="goal-type-question">What kind of goal are you setting?</p>
+                <div class="goal-type-cards">
+                    <div class="goal-type-card" id="pickShortTerm">
+                        <div class="goal-type-icon">⚡</div>
+                        <div class="goal-type-name">Short-Term</div>
+                        <div class="goal-type-desc">
+                            A weekly goal — assign it to a day with a priority level.
+                        </div>
+                    </div>
+                    <div class="goal-type-card" id="pickLongTerm">
+                        <div class="goal-type-icon">🎯</div>
+                        <div class="goal-type-name">Long-Term</div>
+                        <div class="goal-type-desc">
+                            A bigger goal with a target, deadline and progress tracking.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         SHORT-TERM GOAL MODAL
+    ══════════════════════════════════════════ -->
+    <div class="goal-modal-overlay" id="shortTermOverlay">
+        <div class="goal-modal">
+            <div class="goal-modal-header">
+                <button class="goal-modal-back" id="backToTypeFromShort">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <h3 class="goal-modal-title">Short-Term Goal ⚡</h3>
+                <button class="goal-modal-close" id="closeShortModal">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="goal-modal-body">
+
+                <div class="goal-field">
+                    <label class="goal-field-label">GOAL</label>
+                    <input type="text" class="goal-field-input" id="shortGoalText"
+                        placeholder="What do you want to achieve?" autocomplete="off">
+                    <span class="goal-field-error" id="shortGoalError">Please enter a goal.</span>
+                </div>
+
+                <div class="goal-field">
+                    <label class="goal-field-label">DESCRIPTION (OPTIONAL)</label>
+                    <textarea class="goal-field-input goal-field-textarea"
+                        id="shortGoalDesc" placeholder="Add more context..." rows="2"></textarea>
+                </div>
+
+                <div class="goal-field-row">
+                    <div class="goal-field">
+                        <label class="goal-field-label">DAY</label>
+                        <select class="goal-field-input" id="shortGoalDay">
+                            <option value="">Any day</option>
+                            <option value="Mon">Monday</option>
+                            <option value="Tue">Tuesday</option>
+                            <option value="Wed">Wednesday</option>
+                            <option value="Thu">Thursday</option>
+                            <option value="Fri">Friday</option>
+                            <option value="Sat">Saturday</option>
+                            <option value="Sun">Sunday</option>
+                        </select>
+                    </div>
+                    <div class="goal-field">
+                        <label class="goal-field-label">PRIORITY</label>
+                        <div class="priority-picker" id="shortPriorityPicker">
+                            <button class="priority-opt high" data-priority="high">
+                                <span class="priority-dot"></span> High
+                            </button>
+                            <button class="priority-opt medium" data-priority="medium">
+                                <span class="priority-dot"></span> Med
+                            </button>
+                            <button class="priority-opt low active-priority" data-priority="low">
+                                <span class="priority-dot"></span> Low
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reminder toggle -->
+                <div class="goal-reminder-toggle-row">
+                    <div class="goal-reminder-toggle-left">
+                        <span class="goal-reminder-toggle-icon">🔔</span>
+                        <div>
+                            <div class="goal-reminder-toggle-title">Add to Reminders</div>
+                            <div class="goal-reminder-toggle-sub">Get notified about this goal</div>
+                        </div>
+                    </div>
+                    <label class="goal-reminder-switch">
+                        <input type="checkbox" id="shortReminderToggle">
+                        <span class="goal-reminder-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Reminder options -->
+                <div class="goal-reminder-options" id="shortReminderOptions" style="display:none;">
+                    <div class="goal-field">
+                        <label class="goal-field-label">REMINDER FREQUENCY</label>
+                        <div class="goal-freq-picker" id="shortFreqPicker">
+                            <button class="goal-freq-btn active-freq" data-freq="daily">Daily</button>
+                            <button class="goal-freq-btn" data-freq="weekly">Weekly</button>
+                            <button class="goal-freq-btn" data-freq="monthly">Monthly</button>
+                        </div>
+                    </div>
+                    <div class="goal-field-row">
+                        <div class="goal-field">
+                            <label class="goal-field-label">DATE</label>
+                            <input type="date" class="goal-field-input" id="shortReminderDate">
+                        </div>
+                        <div class="goal-field">
+                            <label class="goal-field-label">TIME</label>
+                            <input type="time" class="goal-field-input" id="shortReminderTime">
+                        </div>
+                    </div>
+                    <div class="goal-reminder-preview" id="shortReminderPreview" style="display:none;">
+                        <i class="fa-solid fa-bell"></i>
+                        <span id="shortReminderPreviewText"></span>
+                    </div>
+                </div>
+
+            </div>
+            <div class="goal-modal-footer">
+                <button class="goal-create-btn" id="createShortGoalBtn">
+                    <i class="fa-solid fa-plus"></i> Add Goal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         LONG-TERM GOAL MODAL
+    ══════════════════════════════════════════ -->
+    <div class="goal-modal-overlay" id="longTermOverlay">
+        <div class="goal-modal">
+            <div class="goal-modal-header">
+                <button class="goal-modal-back" id="backToTypeFromLong">
+                    <i class="fa-solid fa-arrow-left"></i>
+                </button>
+                <h3 class="goal-modal-title">Long-Term Goal 🎯</h3>
+                <button class="goal-modal-close" id="closeLongModal">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="goal-modal-body">
+
+                <div class="goal-field">
+                    <label class="goal-field-label">GOAL TITLE</label>
+                    <input type="text" class="goal-field-input" id="longGoalTitle"
+                        placeholder="What do you want to achieve?" autocomplete="off">
+                    <span class="goal-field-error" id="longGoalError">Please enter a goal title.</span>
+                </div>
+
+                <div class="goal-field">
+                    <label class="goal-field-label">DESCRIPTION (OPTIONAL)</label>
+                    <textarea class="goal-field-input goal-field-textarea"
+                        id="longGoalDesc" placeholder="Describe your goal..." rows="2"></textarea>
+                </div>
+
+                <div class="goal-field">
+                    <label class="goal-field-label">PRIORITY</label>
+                    <div class="priority-picker" id="longPriorityPicker">
+                        <button class="priority-opt high" data-priority="high">
+                            <span class="priority-dot"></span> High
+                        </button>
+                        <button class="priority-opt medium" data-priority="medium">
+                            <span class="priority-dot"></span> Medium
+                        </button>
+                        <button class="priority-opt low active-priority" data-priority="low">
+                            <span class="priority-dot"></span> Low
+                        </button>
+                    </div>
+                </div>
+
+                <div class="goal-field">
+                    <label class="goal-field-label">TARGET VALUE (OPTIONAL)</label>
+                    <input type="text" class="goal-field-input" id="longGoalTargetValue"
+                        placeholder="e.g. Save 5000 GHS, Run 100km" autocomplete="off">
+                </div>
+
+                <div class="goal-field-row">
+                    <div class="goal-field">
+                        <label class="goal-field-label">TARGET AMOUNT (OPTIONAL)</label>
+                        <input type="number" class="goal-field-input" id="longGoalTargetAmount"
+                            placeholder="0.00" min="0" step="0.01">
+                    </div>
+                    <div class="goal-field">
+                        <label class="goal-field-label">DEADLINE (OPTIONAL)</label>
+                        <input type="date" class="goal-field-input" id="longGoalDeadline">
+                    </div>
+                </div>
+
+                <div class="goal-field">
+                    <label class="goal-field-label">
+                        INITIAL PROGRESS (%)
+                        <span style="color:var(--text-muted);font-weight:400;
+                            text-transform:none;letter-spacing:0;">
+                            — if you've already started
+                        </span>
+                    </label>
+                    <input type="number" class="goal-field-input" id="longGoalInitProgress"
+                        placeholder="0" min="0" max="100" value="0">
+                </div>
+
+                <!-- Reminder toggle -->
+                <div class="goal-reminder-toggle-row">
+                    <div class="goal-reminder-toggle-left">
+                        <span class="goal-reminder-toggle-icon">🔔</span>
+                        <div>
+                            <div class="goal-reminder-toggle-title">Add to Reminders</div>
+                            <div class="goal-reminder-toggle-sub">Get notified about this goal</div>
+                        </div>
+                    </div>
+                    <label class="goal-reminder-switch">
+                        <input type="checkbox" id="longReminderToggle">
+                        <span class="goal-reminder-slider"></span>
+                    </label>
+                </div>
+
+                <!-- Reminder options -->
+                <div class="goal-reminder-options" id="longReminderOptions" style="display:none;">
+                    <div class="goal-field">
+                        <label class="goal-field-label">REMINDER FREQUENCY</label>
+                        <div class="goal-freq-picker" id="longFreqPicker">
+                            <button class="goal-freq-btn active-freq" data-freq="daily">Daily</button>
+                            <button class="goal-freq-btn" data-freq="weekly">Weekly</button>
+                            <button class="goal-freq-btn" data-freq="monthly">Monthly</button>
+                        </div>
+                    </div>
+                    <div class="goal-field-row">
+                        <div class="goal-field">
+                            <label class="goal-field-label">DATE</label>
+                            <input type="date" class="goal-field-input" id="longReminderDate">
+                        </div>
+                        <div class="goal-field">
+                            <label class="goal-field-label">TIME</label>
+                            <input type="time" class="goal-field-input" id="longReminderTime">
+                        </div>
+                    </div>
+                    <div class="goal-reminder-preview" id="longReminderPreview" style="display:none;">
+                        <i class="fa-solid fa-bell"></i>
+                        <span id="longReminderPreviewText"></span>
+                    </div>
+                </div>
+
+            </div>
+            <div class="goal-modal-footer">
+                <button class="goal-create-btn" id="createLongGoalBtn">
+                    <i class="fa-solid fa-plus"></i> Create Goal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         UPDATE PROGRESS MODAL
+    ══════════════════════════════════════════ -->
+    <div class="goal-modal-overlay" id="updateProgressOverlay">
+        <div class="goal-modal" style="max-width:480px;">
+            <div class="goal-modal-header">
+                <h3 class="goal-modal-title">Update Progress</h3>
+                <button class="goal-modal-close" id="closeUpdateModal">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="goal-modal-body">
+
+                <!-- Goal name -->
+                <div class="goal-field">
+                    <label class="goal-field-label">GOAL</label>
+                    <div class="goal-update-name" id="updateGoalName">—</div>
+                </div>
+
+                <!-- Current progress display -->
+                <div class="goal-update-progress-display">
+                    <div class="goal-update-progress-track">
+                        <div class="goal-update-progress-fill"
+                             id="updateCurrentFill"></div>
+                    </div>
+                    <div class="goal-update-progress-labels">
+                        <span class="goal-update-current-label">
+                            Current: <strong id="updateCurrentPct">0%</strong>
+                        </span>
+                        <span class="goal-update-new-label">
+                            New: <strong id="updateNewPct">0%</strong>
+                        </span>
+                    </div>
+                </div>
+
+                <!-- Slider — only goes UP -->
+                <div class="goal-field">
+                    <label class="goal-field-label">
+                        NEW PROGRESS (%) —
+                        <span id="updateProgressVal">0</span>%
+                        <span class="goal-update-locked-note"
+                              id="updateLockedNote"
+                              style="display:none;">
+                            🔒 min <span id="updateMinNote">0</span>%
+                        </span>
+                    </label>
+                    <input type="range" class="goal-progress-slider"
+                        id="updateProgressSlider" min="0" max="100" value="0">
+                </div>
+
+                <!-- What did you do today -->
+                <div class="goal-field">
+                    <label class="goal-field-label">WHAT DID YOU DO TODAY? ✍️</label>
+                    <textarea class="goal-field-input goal-field-textarea"
+                        id="updateProgressNote"
+                        placeholder="e.g. Finished chapter 3, ran 5km, saved $200..."
+                        rows="3"></textarea>
+                    <span class="goal-field-error" id="updateNoteError">
+                        Please describe what you did today.
+                    </span>
+                </div>
+
+                <!-- Progress log / history -->
+                <div class="goal-progress-log" id="goalProgressLog">
+                    <div class="goal-progress-log-title">
+                        <i class="fa-solid fa-clock-rotate-left"></i>
+                        Progress History
+                    </div>
+                    <div class="goal-progress-log-list" id="progressLogList">
+                        <div class="goal-progress-log-empty">
+                            No updates yet — be the first!
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+            <div class="goal-modal-footer">
+                <button class="goal-create-btn" id="saveProgressBtn">
+                    <i class="fa-solid fa-floppy-disk"></i> Save Progress
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Delete Modal -->
+    <div id="confirmModal" style="display:none;">
+        <div class="confirm-backdrop"></div>
+        <div class="confirm-box">
+            <div class="confirm-icon">🗑️</div>
+            <h3 class="confirm-title">Are you sure?</h3>
+            <p class="confirm-msg" id="confirmMsg">This action cannot be undone.</p>
+            <div class="confirm-actions">
+                <button class="confirm-cancel" id="confirmCancel">Cancel</button>
+                <button class="confirm-delete" id="confirmDelete">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

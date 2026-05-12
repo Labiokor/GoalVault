@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goal Vault – Habits</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="brand-top-left">
+            <h1>GOAL VAULT</h1>
+            <p><strong>Plan.Focus.Achieve</strong></p>
+        </div>
+    </header>
+    <div class="user-top-right">
+        <button id="darkModeBtn" title="Toggle dark mode"></button>
+        <div id="streakMenu" title="current streak">
+            <span class="streak-icon">🔥</span>
+            <span class="streak-count">0</span>
+            <span class="streak-tooltip">Current streak: 0 days</span>
+        </div>
+    </div>
+
+    <nav class="nav_bottom">
+    <div class="nav-item">
+        <a href="index.html">
+            <i class="fa-solid fa-chart-line"></i>Dashboard
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="planner.html">
+            <i class="fa-solid fa-calendar-check"></i>Goals
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="habits.html">
+            <i class="fa-solid fa-check"></i>Habits
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="notebook.html">
+            <i class="fas fa-sticky-note"></i>Notebook
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="tasks.html">
+            <i class="fa-solid fa-list-check"></i>Tasks
+        </a>
+    </div>
+    <div class="nav-item" style="position:relative;">
+        <a href="notifications.html" style="position:relative;">
+            <i class="fa-solid fa-bell"></i>
+            <span class="notif-nav-badge" id="notifNavBadge"></span>
+            Alerts
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="reminders.html">
+            <i class="fa-solid fa-clock-rotate-left"></i>Reminders
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="account.html">
+            <i class="fa-solid fa-user"></i>My Account
+        </a>
+    </div>
+</nav>
+
+    <div id="habitSection" class="section">
+        <div class="habit-main-grid">
+            <div class="left">
+                <h1 class="page-title">Daily Habits.</h1>
+                <p class="page-sub">
+                    Consistency is the bridge between goals and accomplishment.<br>
+                    <span id="habitSreakText">You are on a 0-day winning streak today</span>
+                </p>
+                <div class="habits-header">
+                    <span class="habits-label">Active Habits</span>
+                    <span class="pending-badge" id="pendingBadge">0 PENDING TODAY</span>
+                </div>
+                <div class="habit-input-row">
+                    <input type="text" id="habitInput" placeholder="Add a new habit…">
+                    <button id="addHabitBtn">+</button>
+                </div>
+                <div class="habit-container" id="habitContainer"></div>
+            </div>
+            <div class="right">
+                <!-- Weekly Performance -->
+                <div class="panel">
+                    <div class="panel-label">Weekly Performance</div>
+                    <div class="bar-chart">
+                        <div class="bar-col"><div class="bar normal" style="height:55%"></div><div class="bar-day">Mon</div></div>
+                        <div class="bar-col"><div class="bar normal" style="height:70%"></div><div class="bar-day">Tue</div></div>
+                        <div class="bar-col"><div class="bar normal" style="height:45%"></div><div class="bar-day">Wed</div></div>
+                        <div class="bar-col"><div class="bar peak" style="height:100%"></div><div class="bar-day">Thu</div></div>
+                        <div class="bar-col"><div class="bar normal" style="height:75%"></div><div class="bar-day">Fri</div></div>
+                        <div class="bar-col"><div class="bar normal" style="height:30%"></div><div class="bar-day">Sat</div></div>
+                        <div class="bar-col"><div class="bar dim" style="height:12%"></div><div class="bar-day">Sun</div></div>
+                    </div>
+                    <div class="perf-row">
+                        <div>
+                            <div class="perf-pct">84%</div>
+                            <div class="perf-sub">Overall completion rate</div>
+                        </div>
+                        <div class="perf-change">
+                            <div class="val">+12%</div>
+                            <div class="lbl">vs last week</div>
+                        </div>
+                    </div>
+                </div>
+                <!-- Calendar -->
+                <div class="cal-header">
+                    <div class="cal-title" id="calTitle">March 2026</div>
+                    <div class="cal-nav">
+                        <button id="prevMonth">‹</button>
+                        <button id="nextMonth">›</button>
+                    </div>
+                </div>
+                <div class="cal-grid" id="calGrid">
+                    <div class="cal-dh">Su</div><div class="cal-dh">Mo</div><div class="cal-dh">Tu</div>
+                    <div class="cal-dh">We</div><div class="cal-dh">Th</div><div class="cal-dh">Fr</div><div class="cal-dh">Sa</div>
+                </div>
+                <div class="cal-stats">
+                    <div><div class="cs-val green">24</div><div class="cs-lbl">Completed</div></div>
+                    <div><div class="cs-val red">2</div><div class="cs-lbl">Skipped</div></div>
+                    <div><div class="cs-val blue">14</div><div class="cs-lbl">Current Streak</div></div>
+                </div>
+                <button class="fab">+</button>
+                <!-- Streak Panel -->
+                <div class="panel">
+                    <div class="streak-header">
+                        <div class="streak-title" id="streakTitle">0-Day Winning<br>Streak</div>
+                        <div class="streak-badge" id="streakBadge">🔥KEEP GOING</div>
+                    </div>
+                    <div class="streak-dots" id="streakDots"></div>
+                    <div class="streak-note" id="streakNote"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- ── Confirm Delete Modal ── -->
+<div id="confirmModal" style="display:none;">
+    <div class="confirm-backdrop"></div>
+    <div class="confirm-box">
+        <div class="confirm-icon">🗑️</div>
+        <h3 class="confirm-title">Are you sure?</h3>
+        <p class="confirm-msg" id="confirmMsg">
+            This action cannot be undone.
+        </p>
+        <div class="confirm-actions">
+            <button class="confirm-cancel" id="confirmCancel">
+                Cancel
+            </button>
+            <button class="confirm-delete" id="confirmDelete">
+                Delete
+            </button>
+        </div>
+    </div>
+</div>
+
+    <script src="app.js"></script>
+</body>
+</html>

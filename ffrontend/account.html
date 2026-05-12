@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goal Vault – Account</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <header>
+        <div class="brand-top-left">
+            <h1>GOAL VAULT</h1>
+            <p><strong>Plan.Focus.Achieve</strong></p>
+        </div>
+    </header>
+
+    <div class="user-top-right">
+        <button id="darkModeBtn" title="Toggle dark mode"></button>
+        <div id="streakMenu" title="current streak">
+            <span class="streak-icon">🔥</span>
+            <span class="streak-count">0</span>
+            <span class="streak-tooltip">Current streak: 0 days</span>
+        </div>
+    </div>
+
+    <nav class="nav_bottom">
+    <div class="nav-item">
+        <a href="index.html">
+            <i class="fa-solid fa-chart-line"></i>Dashboard
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="planner.html">
+            <i class="fa-solid fa-calendar-check"></i>Goals
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="habits.html">
+            <i class="fa-solid fa-check"></i>Habits
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="notebook.html">
+            <i class="fas fa-sticky-note"></i>Notebook
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="tasks.html">
+            <i class="fa-solid fa-list-check"></i>Tasks
+        </a>
+    </div>
+    <div class="nav-item" style="position:relative;">
+        <a href="notifications.html" style="position:relative;">
+            <i class="fa-solid fa-bell"></i>
+            <span class="notif-nav-badge" id="notifNavBadge"></span>
+            Alerts
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="reminders.html">
+            <i class="fa-solid fa-clock-rotate-left"></i>Reminders
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="account.html">
+            <i class="fa-solid fa-user"></i>My Account
+        </a>
+    </div>
+</nav>
+
+    <div id="accountSection" class="section">
+
+        <!-- ── Main settings menu ── -->
+        <h2 id="settingsTitle">Settings</h2>
+        <p class="subtitle" id="settingsSubtitle">
+            Manage your personal information and account settings.
+        </p>
+
+        <div id="settingsMenu" class="settings-menu">
+
+            <!-- Group 1 — Account & Wallet -->
+            <div class="settings-group">
+                <div class="settings-row"
+                     onclick="openSettingsPage('profilePage')">
+                    <div class="settings-row-left">
+                        <div class="settings-icon">
+                            <i class="fa-solid fa-user"></i>
+                        </div>
+                        <div>
+                            <div class="settings-row-title">My Account</div>
+                            <div class="settings-row-sub">
+                                Edit profile, photo, timezone
+                            </div>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right settings-chevron"></i>
+                </div>
+
+                <div class="settings-row"
+                     onclick="openSettingsPage('walletPageInner')">
+                    <div class="settings-row-left">
+                        <div class="settings-icon">
+                            <i class="fa-solid fa-wallet"></i>
+                        </div>
+                        <div>
+                            <div class="settings-row-title">My Wallet</div>
+                            <div class="settings-row-sub">
+                                View balance, add funds
+                            </div>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right settings-chevron"></i>
+                </div>
+            </div>
+
+            <!-- Group 2 — Appearance -->
+            <div class="settings-group">
+                <div class="settings-row"
+                     onclick="document.getElementById('darkModeBtn').click()">
+                    <div class="settings-row-left">
+                        <div class="settings-icon">
+                            <i class="fa-solid fa-moon"></i>
+                        </div>
+                        <div>
+                            <div class="settings-row-title">Appearance</div>
+                            <div class="settings-row-sub">
+                                Toggle dark / light mode
+                            </div>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right settings-chevron"></i>
+                </div>
+            </div>
+
+            <!-- Group 3 — Logout -->
+            <div class="settings-group">
+                <div class="settings-row settings-row-danger"
+                     id="logoutBtn">
+                    <div class="settings-row-left">
+                        <div class="settings-icon settings-icon-danger">
+                            <i class="fa-solid fa-arrow-right-from-bracket"></i>
+                        </div>
+                        <div>
+                            <div class="settings-row-title settings-title-danger">
+                                Log Out
+                            </div>
+                            <div class="settings-row-sub">
+                                Sign out of your account
+                            </div>
+                        </div>
+                    </div>
+                    <i class="fa-solid fa-chevron-right settings-chevron"></i>
+                </div>
+            </div>
+
+        </div>
+        <!-- end settingsMenu -->
+
+        <!-- ── Profile subpage ── -->
+        <div id="profilePage" class="settings-subpage" style="display:none;">
+
+            <button class="settings-back-btn"
+                    onclick="closeSettingsPage('profilePage')">
+                <i class="fa-solid fa-arrow-left"></i> Back
+            </button>
+
+            <h3 style="margin:0 0 4px;">My Account</h3>
+            <p class="subtitle">Manage your personal information.</p>
+
+            <div class="account-card">
+
+                <div class="account-header">
+                    <div class="avatar-wrapper">
+                        <img id="profileImage"
+                             src="https://i.pravatar.cc/100"
+                             alt="Profile photo">
+                        <input type="file"
+                               id="imageUpload"
+                               accept="image/*"
+                               hidden>
+                        <button class="edit-pic"
+                                onclick="document.getElementById('imageUpload').click()"
+                                title="Change photo">
+                            ✏
+                        </button>
+                    </div>
+                    <div class="profile-info">
+                        <h3 id="accName">Your Name</h3>
+                        <p id="accEmail">your@email.com</p>
+                        <button class="edit-btn" onclick="toggleEdit()">
+                            <i class="fa-solid fa-pen"
+                               style="font-size:0.75rem;margin-right:4px;">
+                            </i>
+                            Edit Profile
+                        </button>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="account-grid">
+                    <div class="account-item">
+                        <label>Full Name</label>
+                        <input type="text"
+                               id="fullName"
+                               value=""
+                               readonly>
+                    </div>
+                    <div class="account-item">
+                        <label>Email</label>
+                        <input type="email"
+                               id="email"
+                               value=""
+                               readonly>
+                    </div>
+                    <div class="account-item">
+                        <label>Timezone</label>
+                        <select id="timezone" disabled>
+                            <option value="GMT+0">(GMT+0:00) Accra</option>
+                            <option value="GMT+1">(GMT+1:00) Lagos</option>
+                            <option value="GMT-5">(GMT-5:00) New York</option>
+                            <option value="GMT+1">(GMT+1:00) London</option>
+                            <option value="GMT+2">(GMT+2:00) Cairo</option>
+                            <option value="GMT+3">(GMT+3:00) Nairobi</option>
+                            <option value="GMT+5:30">(GMT+5:30) Mumbai</option>
+                            <option value="GMT+8">(GMT+8:00) Singapore</option>
+                            <option value="GMT-8">(GMT-8:00) Los Angeles</option>
+                        </select>
+                    </div>
+                    <div class="account-item">
+                        <label>Member Since</label>
+                        <input type="text"
+                               id="memberSince"
+                               readonly
+                               placeholder="—">
+                    </div>
+                </div>
+
+                <div class="status">
+                    <span class="active">
+                        <i class="fa-solid fa-circle"
+                           style="font-size:6px;margin-right:5px;
+                                  vertical-align:middle;">
+                        </i>
+                        Active
+                    </span>
+                </div>
+
+                <div class="account-actions">
+                    <button id="cancelBtn"
+                            onclick="cancelEdit()"
+                            style="display:none;">
+                        Cancel
+                    </button>
+                    <button id="saveBtn"
+                            onclick="saveAccount()"
+                            style="display:none;">
+                        <i class="fa-solid fa-check"
+                           style="margin-right:5px;">
+                        </i>
+                        Save Changes
+                    </button>
+                </div>
+
+            </div>
+        </div>
+        <!-- end profilePage -->
+
+        <!-- ── Wallet subpage ── -->
+        <div id="walletPageInner"
+             class="settings-subpage"
+             style="display:none;">
+
+            <button class="settings-back-btn"
+                    onclick="closeSettingsPage('walletPageInner')">
+                <i class="fa-solid fa-arrow-left"></i> Back
+            </button>
+
+            <h3 style="margin:0 0 4px;">My Wallet</h3>
+            <p class="subtitle">Your balance and payment info.</p>
+
+            <div class="account-card">
+
+                <div style="text-align:center; padding:32px 20px 24px;">
+                    <div style="
+                        display:inline-flex;
+                        align-items:center;
+                        justify-content:center;
+                        width:64px; height:64px;
+                        background:linear-gradient(135deg,#4f8ef7,#6c63ff);
+                        border-radius:50%;
+                        margin-bottom:16px;
+                        font-size:1.6rem;
+                        box-shadow:0 8px 24px rgba(79,142,247,0.3);
+                    ">
+                        💳
+                    </div>
+                    <p style="
+                        color:var(--text-muted);
+                        font-size:0.82rem;
+                        margin-bottom:6px;
+                        font-family:'Inter',sans-serif;
+                        text-transform:uppercase;
+                        letter-spacing:1px;
+                    ">
+                        Current Balance
+                    </p>
+                    <h1 id="balanceAmount" style="
+                        font-size:2.8rem;
+                        font-weight:800;
+                        color:var(--text-primary);
+                        margin:8px 0 4px;
+                        font-family:'Poppins',sans-serif;
+                        letter-spacing:-1px;
+                    ">
+                        $0.00
+                    </h1>
+                    <p style="
+                        font-size:0.78rem;
+                        color:var(--text-muted);
+                        font-family:'Inter',sans-serif;
+                        margin-bottom:24px;
+                    ">
+                        Available funds
+                    </p>
+                    <button class="btn" style="
+                        padding:12px 32px;
+                        border-radius:99px;
+                        font-size:0.9rem;
+                        background:linear-gradient(135deg,#4f8ef7,#6c63ff);
+                        box-shadow:0 4px 16px rgba(79,142,247,0.3);
+                    ">
+                        <i class="fa-solid fa-plus"
+                           style="margin-right:6px;">
+                        </i>
+                        Add Funds
+                    </button>
+                </div>
+
+                <hr>
+
+                <div style="padding:4px 0 8px;">
+                    <p style="
+                        font-size:0.72rem;
+                        font-weight:700;
+                        text-transform:uppercase;
+                        letter-spacing:1px;
+                        color:var(--text-muted);
+                        margin-bottom:12px;
+                        font-family:'JetBrains Mono',monospace;
+                    ">
+                        Recent Transactions
+                    </p>
+                    <div style="
+                        text-align:center;
+                        padding:24px;
+                        color:var(--text-muted);
+                        font-size:0.84rem;
+                        font-family:'Inter',sans-serif;
+                        background:var(--surface-2);
+                        border-radius:var(--radius);
+                        border:1.5px dashed var(--border);
+                    ">
+                        <div style="font-size:1.8rem;margin-bottom:8px;">
+                            🧾
+                        </div>
+                        No transactions yet
+                    </div>
+                </div>
+
+            </div>
+        </div>
+        <!-- end walletPageInner -->
+
+    </div>
+    <!-- end accountSection -->
+<!-- ── Confirm Delete Modal ── -->
+<div id="confirmModal" style="display:none;">
+    <div class="confirm-backdrop"></div>
+    <div class="confirm-box">
+        <div class="confirm-icon">🗑️</div>
+        <h3 class="confirm-title">Are you sure?</h3>
+        <p class="confirm-msg" id="confirmMsg">
+            This action cannot be undone.
+        </p>
+        <div class="confirm-actions">
+            <button class="confirm-cancel" id="confirmCancel">
+                Cancel
+            </button>
+            <button class="confirm-delete" id="confirmDelete">
+                Delete
+            </button>
+        </div>
+    </div>
+</div>
+
+    <script src="app.js"></script>
+</body>
+</html>

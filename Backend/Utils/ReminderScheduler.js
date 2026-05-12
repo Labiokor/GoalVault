@@ -3,7 +3,9 @@ const Reminder = require('../models/Reminder')
 const Task = require('../models/Task')
 const Habit = require('../models/Habit')
 const Goal = require('../models/Goal')
+const User = require('../models/User')
 const { createNotification } = require('../controllers/notificationController')
+const { sendReminderEmail } = require('./emailService')
 
 const advanceReminder = (reminder) => {
   const next = new Date(reminder.datetime)
@@ -26,44 +28,54 @@ exports.processRecurringReminders = () => {
     try {
       const now = new Date()
 
-      //  Handle recurring reminders — advance to next occurrence
-      const recurringReminders = await Reminder.find({
-        recurring: true,
-        datetime: { $lte: now },
-        completed: false
-      })
-
-      await Promise.all(recurringReminders.map(async (reminder) => {
-        reminder.datetime = advanceReminder(reminder)
-        await reminder.save()
-
-        await createNotification(
-          reminder.user,
-          'Reminder 🔔',
-          reminder.title,
-          'reminder',
-          { model: 'Reminder', documentId: reminder._id }
-        )
-      }))
-
-      // Handle one-time reminders — mark as completed
+      // One-time reminders
       const oneTimeReminders = await Reminder.find({
         recurring: false,
         datetime: { $lte: now },
         completed: false
-      })
+      }).populate('user')
 
       await Promise.all(oneTimeReminders.map(async (reminder) => {
         reminder.completed = true
         await reminder.save()
 
         await createNotification(
-          reminder.user,
+          reminder.user._id || reminder.user,
           'Reminder 🔔',
           reminder.title,
           'reminder',
           { model: 'Reminder', documentId: reminder._id }
         )
+
+        const user = await User.findById(reminder.user._id || reminder.user)
+        if (user) {
+          sendReminderEmail(user.email, user.name, reminder)
+        }
+      }))
+
+      // Recurring reminders
+      const recurringReminders = await Reminder.find({
+        recurring: true,
+        datetime: { $lte: now },
+        completed: false
+      }).populate('user')
+
+      await Promise.all(recurringReminders.map(async (reminder) => {
+        reminder.datetime = advanceReminder(reminder)
+        await reminder.save()
+
+        await createNotification(
+          reminder.user._id || reminder.user,
+          'Reminder 🔔',
+          reminder.title,
+          'reminder',
+          { model: 'Reminder', documentId: reminder._id }
+        )
+
+        const user = await User.findById(reminder.user._id || reminder.user)
+        if (user) {
+          sendReminderEmail(user.email, user.name, reminder)
+        }
       }))
 
       const total = recurringReminders.length + oneTimeReminders.length

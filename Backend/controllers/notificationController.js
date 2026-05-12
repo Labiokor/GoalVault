@@ -1,6 +1,7 @@
 const Notification = require('../models/Notification')
 const { success, error } = require('../Utils/responseHandler')
-
+const { sendNotificationEmail } = require('../Utils/emailService')
+const User = require('../models/User')
 exports.getNotifications = async (req, res) => {
   try {
     const notifications = await Notification.find({ user: req.user.id }).sort({ createdAt: -1 })

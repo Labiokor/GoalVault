@@ -66,7 +66,16 @@ export function renderSidebar(activePage = '') {
 }
 
 export function toggleSidebar() {
-  document.getElementById('sidebar')?.classList.toggle('collapsed')
-  document.getElementById('main-content')?.classList.toggle('expanded')
-  document.getElementById('top-bar')?.classList.toggle('expanded')
+  const sidebar = document.getElementById('sidebar')
+  const topBar = document.getElementById('top-bar')
+  const mainContent = document.getElementById('main-content')
+
+  if (window.innerWidth <= 768) {
+    sidebar?.classList.toggle('mobile-open')
+    return
+  }
+
+  sidebar?.classList.toggle('collapsed')
+  mainContent?.classList.toggle('expanded')
+  topBar?.classList.toggle('expanded')
 }

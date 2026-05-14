@@ -42,3 +42,17 @@ exports.deleteNote = async (req, res) => {
     error(res, err.message, 500)
   }
 }
+
+exports.pinNote = async (req, res) => {
+  try {
+    const note = await Note.findOne({ _id: req.params.id })
+    if (!note) return error(res, 'Note not found', 404)
+    if (note.user.toString() !== req.user.id) return error(res, 'Forbidden', 403)
+    
+    note.pinned = !note.pinned
+    await note.save()
+    success(res, note, 'Note pin status updated')
+  } catch (err) {
+    error(res, err.message, 500)
+  }
+}

@@ -1067,8 +1067,13 @@ if (page === 'dashboard') {
             globalProgressFill.style.width = pct + '%';
         }
 
-        // Global UI updates from localStorage (Streaks)
-        const streakVal = parseInt(localStorage.getItem('streak') || '0');
+        // Global UI updates (Streaks)
+        const habitsForStreak = (habitsRes.status === 'fulfilled' && habitsRes.value.data) ? habitsRes.value.data : [];
+        const streakVal = computeStreakFromHabits(habitsForStreak);
+        streak = streakVal; // Update global state
+        localStorage.setItem('streak', streakVal);
+        updateStreakDisplay();
+        
         const userName = localStorage.getItem('gv_user_name') || 'User';
 
         const usernameDisplay = document.getElementById('usernameDisplay');
@@ -1078,9 +1083,6 @@ if (page === 'dashboard') {
         const heroStreakBadge = document.getElementById('heroStreakBadge');
         if (heroStreakNum) heroStreakNum.textContent = streakVal;
         if (heroStreakBadge) heroStreakBadge.textContent = badgeText(streakVal);
-
-        const sc = document.querySelector('.streak-count');
-        if (sc) sc.textContent = streakVal;
 
         buildDots(Math.min(streakVal, 21));
         updateRing(streakVal);
@@ -1413,19 +1415,36 @@ if (page === 'habits') {
         const firstDay    = new Date(year, month, 1).getDay();
         const daysInMonth = new Date(year, month + 1, 0).getDate();
         for (let i = 0; i < firstDay; i++) calGrid.appendChild(document.createElement('div'));
+        const activeDays = new Set();
+        habitsData.forEach(h => {
+            (h.completedDates || []).forEach(d => {
+                activeDays.add(getLocalYYYYMMDD(new Date(d)));
+            });
+        });
+
         for (let day = 1; day <= daysInMonth; day++) {
             const dayDiv  = document.createElement('div');
             const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
             dayDiv.innerText = day;
-            dayDiv.classList.add('cal-d', localStorage.getItem(`completed_${dateStr}`) ? 'done' : 'plain');
+            dayDiv.classList.add('cal-d', activeDays.has(dateStr) ? 'done' : 'plain');
             if (dateStr === todayStr) dayDiv.classList.add('today');
             calGrid.appendChild(dayDiv);
         }
-        const completedDays = Object.keys(localStorage).filter(k => k.startsWith('completed_')).length;
+        
+        const completedDays = activeDays.size;
+        const currentStreak = computeStreakFromHabits(habitsData);
+        streak = currentStreak;
+        localStorage.setItem('streak', streak);
+        
+        updateStreakDisplay(); // update the top nav icon and right panel
+        
+        const habitStreakTxt = document.getElementById('habitSreakText');
+        if (habitStreakTxt) habitStreakTxt.textContent = `You are on a ${streak}-day winning streak today`;
+
         const greenVal = document.querySelector('.cs-val.green');
         const blueVal  = document.querySelector('.cs-val.blue');
         if (greenVal) greenVal.textContent = completedDays;
-        if (blueVal)  blueVal.textContent  = streak;
+        if (blueVal)  blueVal.textContent  = currentStreak;
     }
 
     let habitsData = [];

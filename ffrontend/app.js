@@ -2,10 +2,47 @@
 // GOAL VAULT — app.js  (unified — all pages)
 // ============================================================
 
+const API_BASE = 'http://localhost:5000';
+
+async function apiFetch(path, options = {}) {
+    const token = localStorage.getItem('gv_token');
+    const headers = { ...options.headers };
+    
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (options.body && !(options.body instanceof FormData) && typeof options.body !== 'string') {
+        headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(options.body);
+    }
+    
+    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    const data = await res.json().catch(() => ({}));
+    
+    if (res.status === 401) {
+        localStorage.removeItem('gv_token');
+        localStorage.removeItem('gv_user_name');
+        window.location.href = 'login.html';
+        return Promise.reject(data);
+    }
+    
+    if (!res.ok) return Promise.reject(data);
+    return data;
+}
+
 // ── Auth guard ───────────────────────────────────────────────
-const user = localStorage.getItem('hubUser') || sessionStorage.getItem('hubUser');
-if (!user && !window.location.pathname.includes('login')) {
+const gv_token = localStorage.getItem('gv_token');
+if (!gv_token && !window.location.pathname.includes('login.html')) {
     window.location.href = 'login.html';
+} else if (gv_token && !window.location.pathname.includes('login.html')) {
+    apiFetch('/api/auth/me')
+        .then(res => {
+            const userName = res.data?.name || res.user?.name;
+            if (userName) {
+                localStorage.setItem('gv_user_name', userName);
+                const display = document.getElementById('usernameDisplay');
+                if (display) display.textContent = userName;
+            }
+        })
+        .catch(() => {}); // 401 handles redirect automatically
 }
 
 // ============================================================
@@ -229,6 +266,8 @@ function logoutUser() {
     confirmDelete(
         'Are you sure you want to log out?',
         () => {
+            localStorage.removeItem('gv_token');
+            localStorage.removeItem('gv_user_name');
             localStorage.removeItem('hubUser');
             localStorage.removeItem('hubEmail');
             sessionStorage.removeItem('hubUser');

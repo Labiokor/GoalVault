@@ -2,6 +2,11 @@
 // GOAL VAULT — login.js
 // ============================================================
 
+// ── Redirect if already logged in ─────────────────────────────
+if (localStorage.getItem('gv_token')) {
+    window.location.href = 'index.html';
+}
+
 // ── Elements ─────────────────────────────────────────────────
 const loginBtn      = document.getElementById('loginBtn');
 const emailInput    = document.getElementById('emailInput');
@@ -132,28 +137,43 @@ function validateLogin() {
     return valid;
 }
 
-loginBtn.addEventListener('click', () => {
+loginBtn.addEventListener('click', async () => {
     if (!validateLogin()) return;
 
     const emailVal   = emailInput.value.trim();
-    const username   = emailVal.split('@')[0];
-    const rememberMe = document.getElementById('rememberMe').checked;
-
-    if (rememberMe) {
-        localStorage.setItem('hubUser',  username);
-        localStorage.setItem('hubEmail', emailVal);
-    } else {
-        sessionStorage.setItem('hubUser',  username);
-        sessionStorage.setItem('hubEmail', emailVal);
-    }
+    const passwordVal= passwordInput.value;
 
     // Button loading state
     loginBtn.textContent = 'Logging in...';
     loginBtn.disabled    = true;
 
-    setTimeout(() => {
+    try {
+        const res = await fetch('http://localhost:5000/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailVal, password: passwordVal })
+        });
+        const data = await res.json();
+        
+        if (!res.ok || res.status === 401 || res.status === 400) {
+            loginBtn.textContent = 'Log In';
+            loginBtn.disabled    = false;
+            emailError.textContent = data.message || 'Login failed';
+            emailError.style.display = 'block';
+            return;
+        }
+
+        if (data.data && data.data.token) {
+            localStorage.setItem('gv_token', data.data.token);
+            localStorage.setItem('gv_user_name', data.data.user?.name || emailVal.split('@')[0]);
+        }
+        
         window.location.href = 'index.html';
-    }, 800);
+    } catch (err) {
+        loginBtn.textContent = 'Log In';
+        loginBtn.disabled    = false;
+        showToast('Network error, please try again later', 'error');
+    }
 });
 
 // Enter key submits login
@@ -291,22 +311,54 @@ function validateSignup() {
 }
 
 // ── Signup submit ─────────────────────────────────────────────
-signupBtn.addEventListener('click', () => {
+signupBtn.addEventListener('click', async () => {
     if (!validateSignup()) return;
 
-    const username = signupEmailEl.value.trim().split('@')[0];
-    localStorage.setItem('hubUser',  username);
-    localStorage.setItem('hubEmail', signupEmailEl.value.trim());
+    const emailVal   = signupEmailEl.value.trim();
+    const passwordVal= signupPasswordEl.value;
+    const nameVal    = emailVal.split('@')[0];
 
-    signupBtn.textContent = '✅ Account Created!';
+    signupBtn.textContent = 'Creating...';
     signupBtn.disabled    = true;
 
-    showToast(`Welcome aboard, ${username}! 🎉`, 'success');
+    try {
+        const res = await fetch('http://localhost:5000/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: nameVal, email: emailVal, password: passwordVal })
+        });
+        const data = await res.json();
+        
+        if (!res.ok) {
+            signupBtn.textContent = 'Create Account';
+            signupBtn.disabled    = false;
+            document.getElementById('signupEmailError').textContent = data.message || 'Registration failed';
+            document.getElementById('signupEmailError').style.display = 'block';
+            return;
+        }
 
-    setTimeout(() => {
-        closeSignupPopup();
-        window.location.href = 'index.html';
-    }, 1200);
+        // Backend register returns token
+        if (data.data && data.data.token) {
+            localStorage.setItem('gv_token', data.data.token);
+            localStorage.setItem('gv_user_name', data.data.user?.name || nameVal);
+            showToast(`Welcome aboard, ${nameVal}! 🎉`, 'success');
+            setTimeout(() => {
+                closeSignupPopup();
+                window.location.href = 'index.html';
+            }, 1200);
+        } else {
+            showToast('Account created! Please log in.', 'success');
+            setTimeout(() => {
+                closeSignupPopup();
+                signupBtn.textContent = 'Create Account';
+                signupBtn.disabled    = false;
+            }, 1200);
+        }
+    } catch (err) {
+        signupBtn.textContent = 'Create Account';
+        signupBtn.disabled    = false;
+        showToast('Network error', 'error');
+    }
 });
 
 // Enter key in signup fields

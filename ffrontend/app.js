@@ -14,18 +14,23 @@ async function apiFetch(path, options = {}) {
         options.body = JSON.stringify(options.body);
     }
     
-    const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
-    const data = await res.json().catch(() => ({}));
-    
-    if (res.status === 401) {
-        localStorage.removeItem('gv_token');
-        localStorage.removeItem('gv_user_name');
-        window.location.href = 'login.html';
-        return Promise.reject(data);
+    try {
+        const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+        const data = await res.json().catch(() => ({}));
+        
+        if (res.status === 401) {
+            localStorage.removeItem('gv_token');
+            localStorage.removeItem('gv_user_name');
+            window.location.href = 'login.html';
+            return Promise.reject(data);
+        }
+        
+        if (!res.ok) return Promise.reject(data);
+        return data;
+    } catch (err) {
+        console.error('Network or server error:', err);
+        return Promise.reject({ message: 'Network error or server unreachable.' });
     }
-    
-    if (!res.ok) return Promise.reject(data);
-    return data;
 }
 
 // ── Auth guard ───────────────────────────────────────────────
@@ -449,6 +454,8 @@ if (page === 'reminders') {
         };
 
         async function fetchReminders() {
+            const list = document.getElementById('remList');
+            if (list) list.innerHTML = `<div class="loading-state" style="text-align:center;padding:40px;color:#888;">Loading reminders...</div>`;
             try {
                 const res = await apiFetch('/api/reminders');
                 if (res.data) {
@@ -854,7 +861,6 @@ if (page === 'dashboard') {
             grid.appendChild(d);
         }
     }
-
     function updateRing(streakVal) {
         const milestones = [7, 14, 21, 30, 60, 100];
         const prev       = milestones.filter(m => m <= streakVal).pop() || 0;
@@ -876,27 +882,125 @@ if (page === 'dashboard') {
     }
 
     async function refreshDash() {
-        const streakVal       = parseInt(localStorage.getItem('streak') || '0');
-        const freshTasks      = getTasks();
-        const freshHabits     = getHabits();
-        const notes           = JSON.parse(localStorage.getItem('appNotes') || '[]');
-        
-        let activeReminders = [];
-        try {
-            const res = await apiFetch('/api/reminders?completed=false');
-            activeReminders = res.data || [];
-        } catch (e) {
-            console.error('Failed to fetch dashboard reminders:', e);
+        const results = await Promise.allSettled([
+            apiFetch('/api/goals'),
+            apiFetch('/api/habits'),
+            apiFetch('/api/tasks'),
+            apiFetch('/api/reminders?completed=false')
+        ]);
+
+        const [goalsRes, habitsRes, tasksRes, remindersRes] = results;
+
+        // Process Goals
+        if (goalsRes.status === 'fulfilled') {
+            const goals = goalsRes.value.data || [];
+            const activeGoals = goals.filter(g => g.status === 'active');
+            const readyToComplete = activeGoals.filter(g => g.progress === 100);
+            const nudge = document.getElementById('goalNudge');
+            if (nudge) {
+                if (readyToComplete.length > 0) {
+                    nudge.textContent = `You have ${readyToComplete.length} goal${readyToComplete.length > 1 ? 's' : ''} ready to mark complete! 🎯`;
+                    nudge.style.display = 'block';
+                } else if (activeGoals.length === 0) {
+                    nudge.textContent = `No active goals? Time to set a new vision! 🗺️`;
+                    nudge.style.display = 'block';
+                } else {
+                    nudge.style.display = 'none';
+                }
+            }
+            const dashGoalsNum = document.getElementById('dashGoalsNum');
+            if (dashGoalsNum) dashGoalsNum.textContent = activeGoals.length;
         }
 
-        const u = localStorage.getItem('hubUser') || sessionStorage.getItem('hubUser') || 'User';
+        // Process Habits
+        if (habitsRes.status === 'fulfilled') {
+            const habits = habitsRes.value.data || [];
+            const today = getLocalYYYYMMDD();
+            const doneToday = habits.filter(h => h.completedDates && h.completedDates.includes(today)).length;
+            const habitPct = habits.length === 0 ? 0 : Math.round((doneToday / habits.length) * 100);
+            
+            const dashHabitsNum = document.getElementById('dashHabitsNum');
+            const habitTrend = document.getElementById('habitTrend');
+            if (dashHabitsNum) dashHabitsNum.textContent = `${doneToday}/${habits.length}`;
+            if (habitTrend) {
+                habitTrend.textContent = habitPct === 100 ? '✓ All done' : habitPct > 0 ? `${habitPct}% done` : 'Not started';
+                habitTrend.className = 'stat-trend ' + (habitPct === 100 ? 'up' : habitPct > 0 ? 'warn' : 'neu');
+            }
+        }
+
+        // Process Tasks
+        if (tasksRes.status === 'fulfilled') {
+            const tasks = tasksRes.value.data || [];
+            const remaining = tasks.filter(t => t.status !== 'done').length;
+            const dashTasksNum = document.getElementById('dashTasksNum');
+            const taskTrend = document.getElementById('taskTrend');
+            if (dashTasksNum) dashTasksNum.textContent = remaining;
+            if (taskTrend) {
+                taskTrend.textContent = remaining === 0 ? '✓ All clear' : `${remaining} left`;
+                taskTrend.className = 'stat-trend ' + (remaining === 0 ? 'up' : 'warn');
+            }
+        }
+
+        // Process Reminders
+        if (remindersRes.status === 'fulfilled') {
+            const activeReminders = remindersRes.value.data || [];
+            const dashRemindersNum = document.getElementById('dashRemindersNum');
+            const dashRemindersSub = document.getElementById('dashRemindersSub');
+            const reminderTrend = document.getElementById('reminderTrend');
+            const reminderCount = activeReminders.length;
+
+            if (dashRemindersNum) dashRemindersNum.textContent = reminderCount;
+            if (dashRemindersSub) dashRemindersSub.textContent = reminderCount === 0 ? 'no active reminders' : 'upcoming';
+            
+            const sorted = [...activeReminders].sort((a, b) => new Date(a.time) - new Date(b.time));
+
+            if (reminderTrend) {
+                if (reminderCount === 0) {
+                    reminderTrend.textContent = 'None set';
+                    reminderTrend.className = 'stat-trend neu';
+                } else {
+                    const nextReminder = sorted[0];
+                    const hoursLeft = Math.round((new Date(nextReminder.time) - new Date()) / (1000 * 60 * 60));
+                    if (hoursLeft < 1) {
+                        reminderTrend.textContent = 'Soon!';
+                        reminderTrend.className = 'stat-trend warn';
+                    } else if (hoursLeft < 24) {
+                        reminderTrend.textContent = `${hoursLeft}h left`;
+                        reminderTrend.className = 'stat-trend warn';
+                    } else {
+                        reminderTrend.textContent = `${Math.round(hoursLeft / 24)}d left`;
+                        reminderTrend.className = 'stat-trend up';
+                    }
+                }
+            }
+
+            const reminderList = document.getElementById('dashReminderList');
+            if (reminderList) {
+                const limit = sorted.slice(0, 5);
+                reminderList.innerHTML = limit.length === 0 
+                    ? '<p class="empty-state">No upcoming reminders</p>' 
+                    : limit.map(r => `
+                        <div class="dash-item">
+                            <span class="dash-item-icon">⏰</span>
+                            <div class="dash-item-info">
+                                <div class="dash-item-title">${r.title}</div>
+                                <div class="dash-item-time">${new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                            </div>
+                        </div>
+                    `).join('');
+            }
+        }
+
+        // Global UI updates from localStorage (Streaks)
+        const streakVal = parseInt(localStorage.getItem('streak') || '0');
+        const userName = localStorage.getItem('gv_user_name') || 'User';
 
         const usernameDisplay = document.getElementById('usernameDisplay');
-        if (usernameDisplay) usernameDisplay.textContent = u;
+        if (usernameDisplay) usernameDisplay.textContent = userName;
 
-        const heroStreakNum   = document.getElementById('heroStreakNum');
+        const heroStreakNum = document.getElementById('heroStreakNum');
         const heroStreakBadge = document.getElementById('heroStreakBadge');
-        if (heroStreakNum)   heroStreakNum.textContent   = streakVal;
+        if (heroStreakNum) heroStreakNum.textContent = streakVal;
         if (heroStreakBadge) heroStreakBadge.textContent = badgeText(streakVal);
 
         const sc = document.querySelector('.streak-count');
@@ -904,74 +1008,6 @@ if (page === 'dashboard') {
 
         buildDots(Math.min(streakVal, 21));
         updateRing(streakVal);
-
-        const remaining    = freshTasks.filter(t => t.status !== 'done').length;
-        const dashTasksNum = document.getElementById('dashTasksNum');
-        const taskTrend    = document.getElementById('taskTrend');
-        if (dashTasksNum) dashTasksNum.textContent = remaining;
-        if (taskTrend) {
-            taskTrend.textContent = remaining === 0 ? '✓ All done' : remaining + ' left';
-            taskTrend.className   = 'stat-trend ' + (remaining === 0 ? 'up' : 'warn');
-        }
-
-        const habitPct      = freshHabits.length === 0 ? 0
-            : Math.round((freshHabits.filter(h => h.done).length / freshHabits.length) * 100);
-        const dashHabitsNum = document.getElementById('dashHabitsNum');
-        const habitTrend    = document.getElementById('habitTrend');
-        if (dashHabitsNum) dashHabitsNum.textContent = habitPct + '%';
-        if (habitTrend) {
-            habitTrend.textContent = habitPct === 100 ? '✓ All done' : habitPct > 0 ? habitPct + '% done' : 'Not started';
-            habitTrend.className = 'stat-trend ' + (habitPct === 100 ? 'up' : habitPct > 0 ? 'warn' : 'neu');
-        }
-
-        const dashRemindersNum = document.getElementById('dashRemindersNum');
-        const dashRemindersSub = document.getElementById('dashRemindersSub');
-        const reminderTrend    = document.getElementById('reminderTrend');
-        const reminderCount    = activeReminders.length;
-        if (dashRemindersNum) dashRemindersNum.textContent = reminderCount;
-        if (dashRemindersSub) {
-            dashRemindersSub.textContent = reminderCount === 0 ? 'no active reminders' : 'upcoming';
-        }
-        if (reminderTrend) {
-            if (reminderCount === 0) {
-                reminderTrend.textContent = 'None set';
-                reminderTrend.className   = 'stat-trend neu';
-            } else {
-                const nextReminder = [...activeReminders].sort((a, b) => new Date(a.time) - new Date(b.time))[0];
-                const hoursLeft = Math.round((new Date(nextReminder.time) - new Date()) / (1000 * 60 * 60));
-                if (hoursLeft < 1) {
-                    reminderTrend.textContent = 'Soon!';
-                    reminderTrend.className   = 'stat-trend warn';
-                } else if (hoursLeft < 24) {
-                    reminderTrend.textContent = `${hoursLeft}h left`;
-                    reminderTrend.className   = 'stat-trend warn';
-                } else {
-                    reminderTrend.textContent = `${Math.round(hoursLeft / 24)}d left`;
-                    reminderTrend.className   = 'stat-trend up';
-                }
-            }
-        }
-
-        const dashNotesNum = document.getElementById('dashNotesNum');
-        const notesTrend   = document.getElementById('notesTrend');
-        if (dashNotesNum) dashNotesNum.textContent = notes.length;
-        if (notesTrend) {
-            notesTrend.textContent = notes.length > 0 ? notes.length + ' notes' : 'Empty';
-            notesTrend.className   = 'stat-trend ' + (notes.length > 0 ? 'up' : 'neu');
-        }
-
-        const totalH = freshHabits.length;
-        const doneH  = freshHabits.filter(h => h.done).length;
-        const totalT = freshTasks.length;
-        const doneT  = freshTasks.filter(t => t.status === 'done').length;
-        const total  = totalH + totalT;
-        const done   = doneH + doneT;
-        const pct    = total === 0 ? 0 : Math.round((done / total) * 100);
-
-        const fill = document.getElementById('globalProgressFill');
-        const text = document.getElementById('globalProgressText');
-        if (fill) setTimeout(() => { fill.style.width = pct + '%'; }, 300);
-        if (text) text.textContent = done + ' / ' + total + ' done';
     }
 
     window.addEventListener('DOMContentLoaded', () => {
@@ -996,6 +1032,11 @@ if (page === 'tasks') {
     };
 
     async function fetchTasks() {
+        const lists = ['todo-list', 'doing-list', 'done-list'];
+        lists.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = `<div class="task-empty-msg">Loading...</div>`;
+        });
         try {
             const res = await apiFetch('/api/tasks');
             if (res.data) {
@@ -1311,6 +1352,7 @@ if (page === 'habits') {
     }
 
     async function fetchHabits() {
+        if (habitContainer) habitContainer.innerHTML = `<div class="loading-state">Loading habits...</div>`;
         try {
             const res = await apiFetch('/api/habits');
             if (res.data) habitsData = res.data.map(h => ({ ...h, id: h._id }));
@@ -1644,6 +1686,8 @@ if (page === 'planner') {
     // ── Data helpers ──────────────────────────────────────────
     let plannerGoals = [];
     async function fetchGoals() {
+        const list = document.getElementById('plannerList');
+        if (list) list.innerHTML = `<div class="planner-empty">Loading goals...</div>`;
         try {
             const res = await apiFetch('/api/goals');
             if (res.data) plannerGoals = res.data.map(g => ({...g, id: g._id}));
@@ -1809,6 +1853,7 @@ if (page === 'planner') {
   <div class="planner-goal-meta">
     ${goal.description ? `<span class="planner-goal-desc">${goal.description}</span>` : ''}
     ${isLong && goal.targetValue ? `<span class="planner-goal-detail"><i class="fa-solid fa-bullseye"></i>${goal.targetValue}</span>` : ''}
+    ${isLong && goal.targetAmount ? `<span class="planner-goal-detail" style="color:var(--accent-2);font-weight:700;"><i class="fa-solid fa-ghs"></i>₵${parseFloat(goal.targetAmount).toLocaleString()}</span>` : ''}
     ${deadline ? `<span class="planner-goal-detail" style="color:${deadline.color};"><i class="fa-solid fa-calendar"></i>${deadline.text}</span>` : ''}
     ${hasReminder ? `<span class="planner-goal-detail" style="color:#7c3aed;"><i class="fa-solid fa-bell"></i>${goal.reminderFreq ? goal.reminderFreq.charAt(0).toUpperCase() + goal.reminderFreq.slice(1) : 'Reminder set'}</span>` : ''}
     ${isLong && logCount > 0 ? `<span class="planner-goal-detail" style="color:var(--accent-2);"><i class="fa-solid fa-clock-rotate-left"></i>${logCount} update${logCount === 1 ? '' : 's'}</span>` : ''}
@@ -2524,6 +2569,8 @@ if (page === 'notebook') {
         };
 
         async function fetchNotes() {
+            const list = document.getElementById('notesList');
+            if (list) list.innerHTML = `<div style="text-align:center;padding:30px;color:#aaa;">Loading notes...</div>`;
             try {
                 const res = await apiFetch('/api/notes');
                 if (res.data) {

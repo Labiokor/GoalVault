@@ -4286,6 +4286,33 @@ body.dark .notif-filter-btn.active { background: var(--nav-bg); }
    REMINDERS PAGE
 ============================================================ */
 
+/* ── Sections ─────────────────────────────────────────── */
+.rem-section-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 24px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.rem-empty-sub {
+    padding: 20px;
+    text-align: center;
+    background: var(--surface-2);
+    border-radius: 12px;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    border: 1px dashed var(--border-color);
+}
+.rem-sub-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
 /* ── Page header ─────────────────────────────────────────── */
 .rem-page-header {
     display: flex;

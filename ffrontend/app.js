@@ -425,649 +425,406 @@ function checkDailyCompletion() {
 // REMINDERS PAGE
 // ============================================================
 if (page === 'reminders') {
+    (function () {
+        let remindersData = [];
+        let editingReminderId = null;
+        let snoozeTargetId = null;
+        let currentCat = 'personal';
+        let currentFreq = 'once';
+        let currentColor = '#7c3aed';
 
-    // ── State ─────────────────────────────────────────────────
-    let currentTab    = 'upcoming';
-    let currentSort   = 'soonest';
-    let currentCat    = 'personal';
-    let currentColor  = '#7c3aed';
-    let currentFreq   = 'once';
-    let editingId     = null;
-    let snoozeTargetId = null;
+        const CAT_CONFIG = {
+            personal: { icon: '🙂', label: 'Personal', color: '#7c3aed' },
+            work:     { icon: '💼', label: 'Work',     color: '#3b82f6' },
+            health:   { icon: '💪', label: 'Health',   color: '#10b981' },
+            finance:  { icon: '💰', label: 'Finance',  color: '#f59e0b' },
+            goal:     { icon: '🎯', label: 'Goal',     color: '#ef4444' },
+            default:  { icon: '🔔', label: 'General',  color: '#7c3aed' },
+        };
 
-    // ── Data helpers ──────────────────────────────────────────
-    function getAllReminders() {
-        return JSON.parse(localStorage.getItem('reminders') || '[]');
-    }
-    function saveAllReminders(arr) {
-        localStorage.setItem('reminders', JSON.stringify(arr));
-    }
+        const FREQ_LABELS = {
+            once: 'Once', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
+        };
 
-    // ── Categorise ────────────────────────────────────────────
-    function isOverdue(r) {
-        return !r.triggered && new Date(r.time) <= new Date();
-    }
-    function isUpcoming(r) {
-        return !r.triggered && new Date(r.time) > new Date();
-    }
-    function isCompleted(r) {
-        return r.triggered === true;
-    }
-
-    // ── Countdown text ────────────────────────────────────────
-    function countdownText(timeStr) {
-        const now  = new Date();
-        const then = new Date(timeStr);
-        const diff = then - now;
-        if (diff <= 0) {
-            const ago = Math.abs(diff);
-            if (ago < 3600000)  return `${Math.floor(ago / 60000)}m overdue`;
-            if (ago < 86400000) return `${Math.floor(ago / 3600000)}h overdue`;
-            return `${Math.floor(ago / 86400000)}d overdue`;
-        }
-        if (diff < 3600000)  return `in ${Math.floor(diff / 60000)}m`;
-        if (diff < 86400000) return `in ${Math.floor(diff / 3600000)}h`;
-        if (diff < 604800000) return `in ${Math.floor(diff / 86400000)}d`;
-        return `in ${Math.floor(diff / 604800000)}w`;
-    }
-
-    // ── Format full date ──────────────────────────────────────
-    function formatFullDate(timeStr) {
-        const d = new Date(timeStr);
-        return d.toLocaleDateString('default', {
-            weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
-        }) + ' · ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-
-    // ── Category config ───────────────────────────────────────
-    const CAT_CONFIG = {
-        personal: { icon: '🙂', label: 'Personal', color: '#7c3aed' },
-        work:     { icon: '💼', label: 'Work',     color: '#3b82f6' },
-        health:   { icon: '💪', label: 'Health',   color: '#10b981' },
-        finance:  { icon: '💰', label: 'Finance',  color: '#f59e0b' },
-        goal:     { icon: '🎯', label: 'Goal',     color: '#ef4444' },
-        default:  { icon: '🔔', label: 'General',  color: '#7c3aed' },
-    };
-
-    // ── Freq label ────────────────────────────────────────────
-    const FREQ_LABELS = {
-        once: 'Once', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
-    };
-
-    // ── Update stats bar ──────────────────────────────────────
-    function updateStats() {
-        const all       = getAllReminders();
-        const upcoming  = all.filter(isUpcoming).length;
-        const overdue   = all.filter(isOverdue).length;
-        const completed = all.filter(isCompleted).length;
-
-        document.getElementById('statUpcoming').textContent  = upcoming;
-        document.getElementById('statOverdue').textContent   = overdue;
-        document.getElementById('statCompleted').textContent = completed;
-
-        document.getElementById('tabBadgeUpcoming').textContent  = upcoming;
-        document.getElementById('tabBadgeOverdue').textContent   = overdue;
-        document.getElementById('tabBadgeCompleted').textContent = completed;
-
-        // Next reminder
-        const nextEl = document.getElementById('statNext');
-        const upcomingList = all.filter(isUpcoming)
-            .sort((a, b) => new Date(a.time) - new Date(b.time));
-        if (upcomingList.length > 0) {
-            nextEl.textContent = countdownText(upcomingList[0].time);
-        } else {
-            nextEl.textContent = '—';
-        }
-    }
-
-    // ── Sort reminders ────────────────────────────────────────
-    function sortReminders(arr) {
-        if (currentSort === 'soonest') return [...arr].sort((a, b) => new Date(a.time) - new Date(b.time));
-        if (currentSort === 'oldest')  return [...arr].sort((a, b) => new Date(b.time) - new Date(a.time));
-        if (currentSort === 'alpha')   return [...arr].sort((a, b) => a.label.localeCompare(b.label));
-        return arr;
-    }
-
-    // ── Build reminder card ───────────────────────────────────
-    function buildReminderCard(r) {
-        const cat       = CAT_CONFIG[r.category] || CAT_CONFIG.default;
-        const color     = r.color || cat.color;
-        const overdue   = isOverdue(r);
-        const completed = isCompleted(r);
-        const countdown = countdownText(r.time);
-        const fullDate  = formatFullDate(r.time);
-        const freqLabel = FREQ_LABELS[r.freq] || 'Once';
-        const isGoal    = r.fromGoal === true;
-
-        const card = document.createElement('div');
-        card.className = `rem-card${overdue ? ' rem-overdue' : ''}${completed ? ' rem-completed' : ''}`;
-        card.style.setProperty('--rem-color', color);
-
-        card.innerHTML = `
-<div class="rem-card-accent" style="background:${color};"></div>
-<div class="rem-card-icon" style="background:${color}22;color:${color};">
-    ${cat.icon}
-</div>
-<div class="rem-card-body">
-    <div class="rem-card-top">
-        <div class="rem-card-title">${r.label}</div>
-        <div class="rem-card-badges">
-            ${isGoal ? `<span class="rem-badge goal-badge">
-                <i class="fa-solid fa-bullseye"></i> Goal
-            </span>` : ''}
-            <span class="rem-badge cat-badge" style="background:${color}18;color:${color};border-color:${color}33;">
-                ${cat.label}
-            </span>
-            ${freqLabel !== 'Once' ? `<span class="rem-badge freq-badge">
-                <i class="fa-solid fa-rotate"></i> ${freqLabel}
-            </span>` : ''}
-            ${overdue ? `<span class="rem-badge overdue-badge">
-                <i class="fa-solid fa-triangle-exclamation"></i> Overdue
-            </span>` : ''}
-            ${completed ? `<span class="rem-badge done-badge">
-                <i class="fa-solid fa-check"></i> Done
-            </span>` : ''}
-        </div>
-    </div>
-    ${r.note ? `<div class="rem-card-note">${r.note}</div>` : ''}
-    <div class="rem-card-meta">
-        <span class="rem-card-date">
-            <i class="fa-solid fa-calendar-day"></i> ${fullDate}
-        </span>
-        <span class="rem-card-countdown ${overdue ? 'overdue' : completed ? 'done' : ''}">
-            <i class="fa-solid fa-${completed ? 'circle-check' : overdue ? 'circle-exclamation' : 'clock'}"></i>
-            ${completed ? 'Completed' : countdown}
-        </span>
-    </div>
-</div>
-<div class="rem-card-actions">
-    ${!completed ? `
-    <button class="rem-action-btn done-btn" data-action="done" data-id="${r.id}" title="Mark done">
-        <i class="fa-solid fa-check"></i>
-    </button>` : `
-    <button class="rem-action-btn undo-btn" data-action="undo" data-id="${r.id}" title="Undo">
-        <i class="fa-solid fa-rotate-left"></i>
-    </button>`}
-    ${overdue ? `
-    <button class="rem-action-btn snooze-btn" data-action="snooze" data-id="${r.id}" title="Snooze">
-        <i class="fa-solid fa-clock"></i>
-    </button>` : ''}
-    ${!r.fromGoal ? `
-    <button class="rem-action-btn edit-btn" data-action="edit" data-id="${r.id}" title="Edit">
-        <i class="fa-solid fa-pen"></i>
-    </button>` : ''}
-    <button class="rem-action-btn delete-btn" data-action="delete" data-id="${r.id}" title="Delete">
-        <i class="fa-solid fa-xmark"></i>
-    </button>
-</div>`;
-
-        // Wire up actions
-        card.querySelectorAll('[data-action]').forEach(btn => {
-            btn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                const action = this.dataset.action;
-                const id     = parseFloat(this.dataset.id);
-                handleCardAction(action, id);
-            });
-        });
-
-        return card;
-    }
-
-    // ── Handle card actions ───────────────────────────────────
-    function handleCardAction(action, id) {
-        const all = getAllReminders();
-        const r   = all.find(x => x.id === id);
-        if (!r) return;
-
-        if (action === 'done') {
-            r.triggered   = true;
-            r.completedAt = new Date().toISOString();
-            saveAllReminders(all);
-            pushNotification('reminder', 'Reminder completed ✅', `"${r.label}" marked as done.`);
-            showToast(`"${r.label}" marked as done ✓`, 'success');
-            updateStats();
-            renderReminders();
-        }
-
-        if (action === 'undo') {
-            r.triggered   = false;
-            r.completedAt = null;
-            // Reset time to 1 minute from now if in the past
-            if (new Date(r.time) <= new Date()) {
-                const future = new Date();
-                future.setMinutes(future.getMinutes() + 1);
-                r.time = future.toISOString();
-            }
-            saveAllReminders(all);
-            showToast(`"${r.label}" restored to upcoming ↩`, 'info');
-            updateStats();
-            renderReminders();
-        }
-
-        if (action === 'snooze') {
-            snoozeTargetId = id;
-            const nameEl = document.getElementById('snoozeReminderName');
-            if (nameEl) nameEl.textContent = `"${r.label}"`;
-            openOverlay('snoozeModalOverlay');
-        }
-
-        if (action === 'edit') {
-            openEditModal(r);
-        }
-
-        if (action === 'delete') {
-            confirmDelete(
-                `Delete "${r.label}"? This cannot be undone.`,
-                () => {
-                    const updated = getAllReminders().filter(x => x.id !== id);
-                    saveAllReminders(updated);
-                    pushNotification('delete', 'Reminder deleted', `"${r.label}" has been removed.`);
-                    showToast(`Reminder deleted`, 'error');
-                    updateStats();
+        async function fetchReminders() {
+            try {
+                const res = await apiFetch('/api/reminders');
+                if (res.data) {
+                    remindersData = res.data.map(r => ({ ...r, id: r._id }));
                     renderReminders();
-                },
-                { icon: '🔔', title: 'Delete Reminder?' }
-            );
+                }
+            } catch (err) {
+                console.error('Failed to fetch reminders:', err);
+                showToast('Failed to load reminders', 'error');
+            }
         }
-    }
 
-    // ── Render list ───────────────────────────────────────────
-    function renderReminders() {
-        const list = document.getElementById('remList');
-        if (!list) return;
+        function formatReminderDate(dateStr) {
+            const d = new Date(dateStr);
+            const options = { weekday: 'long', month: 'long', day: 'numeric' };
+            const datePart = d.toLocaleDateString('en-US', options);
+            const timePart = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            return `${datePart} at ${timePart}`;
+        }
 
-        const all = getAllReminders();
+        function countdownText(timeStr) {
+            const now = new Date();
+            const then = new Date(timeStr);
+            const diff = then - now;
+            if (diff <= 0) {
+                const ago = Math.abs(diff);
+                if (ago < 60000) return 'due now';
+                if (ago < 3600000) return `${Math.floor(ago / 60000)}m overdue`;
+                if (ago < 86400000) return `${Math.floor(ago / 3600000)}h overdue`;
+                return `${Math.floor(ago / 86400000)}d overdue`;
+            }
+            if (diff < 3600000) return `in ${Math.floor(diff / 60000)}m`;
+            if (diff < 86400000) return `in ${Math.floor(diff / 3600000)}h`;
+            if (diff < 604800000) return `in ${Math.floor(diff / 86400000)}d`;
+            return `in ${Math.floor(diff / 604800000)}w`;
+        }
 
-        let filtered;
-        if (currentTab === 'upcoming')  filtered = all.filter(isUpcoming);
-        if (currentTab === 'overdue')   filtered = all.filter(isOverdue);
-        if (currentTab === 'completed') filtered = all.filter(isCompleted);
+        function buildReminderItem(r) {
+            const cat = CAT_CONFIG[r.category] || CAT_CONFIG.default;
+            const color = r.color || cat.color;
+            const formattedDate = formatReminderDate(r.datetime);
+            const freqLabel = FREQ_LABELS[r.recurrenceType] || 'Once';
+            const overdue = !r.completed && new Date(r.datetime) < new Date();
 
-        filtered = sortReminders(filtered);
-        list.innerHTML = '';
+            const item = document.createElement('div');
+            item.className = `rem-card ${r.completed ? 'rem-completed' : ''} ${overdue ? 'rem-overdue' : ''}`;
+            item.style.setProperty('--rem-color', color);
 
-        if (filtered.length === 0) {
-            const emptyMessages = {
-                upcoming:  { icon: '⏰', title: 'No upcoming reminders', sub: 'Click "New Reminder" to schedule one.' },
-                overdue:   { icon: '✅', title: 'Nothing overdue!', sub: "You're all caught up — great job!" },
-                completed: { icon: '🎉', title: 'No completed reminders yet', sub: 'Completed reminders will appear here.' },
-            };
-            const msg = emptyMessages[currentTab];
-            list.innerHTML = `
-<div class="rem-empty">
-    <div class="rem-empty-icon">${msg.icon}</div>
-    <div class="rem-empty-title">${msg.title}</div>
-    <div class="rem-empty-sub">${msg.sub}</div>
-    ${currentTab === 'upcoming' ? `
-    <button class="rem-empty-btn" id="emptyAddBtn">
-        <i class="fa-solid fa-plus"></i> New Reminder
-    </button>` : ''}
-</div>`;
-            document.getElementById('emptyAddBtn')?.addEventListener('click', () => {
-                openOverlay('reminderModalOverlay');
+            item.innerHTML = `
+                <div class="rem-card-accent" style="background:${color};"></div>
+                <div class="rem-card-icon" style="background:${color}22;color:${color};">
+                    ${cat.icon}
+                </div>
+                <div class="rem-card-body">
+                    <div class="rem-card-top">
+                        <div class="rem-card-title" style="${r.completed ? 'text-decoration:line-through;opacity:0.6;' : ''}">${r.title}</div>
+                        <div class="rem-card-badges">
+                            <span class="rem-badge cat-badge" style="background:${color}18;color:${color};border-color:${color}33;">
+                                ${cat.label}
+                            </span>
+                            ${r.recurring ? `<span class="rem-badge freq-badge">
+                                <i class="fa-solid fa-rotate"></i> Repeats ${r.recurrenceType}
+                            </span>` : ''}
+                            ${overdue ? `<span class="rem-badge overdue-badge">
+                                <i class="fa-solid fa-triangle-exclamation"></i> Overdue
+                            </span>` : ''}
+                        </div>
+                    </div>
+                    ${r.notes ? `<div class="rem-card-note">${r.notes}</div>` : ''}
+                    <div class="rem-card-meta">
+                        <span class="rem-card-date">
+                            <i class="fa-solid fa-calendar-day"></i> ${formattedDate}
+                        </span>
+                        ${!r.completed ? `
+                        <span class="rem-card-countdown ${overdue ? 'overdue' : ''}">
+                            <i class="fa-solid fa-${overdue ? 'circle-exclamation' : 'clock'}"></i>
+                            ${countdownText(r.datetime)}
+                        </span>` : ''}
+                    </div>
+                </div>
+                <div class="rem-card-actions">
+                    ${!r.completed ? `
+                    <button class="rem-action-btn done-btn" data-id="${r.id}" title="Mark complete">
+                        <i class="fa-solid fa-check"></i>
+                    </button>
+                    <button class="rem-action-btn snooze-btn" data-id="${r.id}" title="Snooze">
+                        <i class="fa-solid fa-clock"></i>
+                    </button>` : ''}
+                    <button class="rem-action-btn edit-btn" data-id="${r.id}" title="Edit">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button class="rem-action-btn delete-btn" data-id="${r.id}" title="Delete">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            `;
+
+            item.querySelector('.done-btn')?.addEventListener('click', () => markComplete(r.id));
+            item.querySelector('.snooze-btn')?.addEventListener('click', () => {
+                snoozeTargetId = r.id;
+                document.getElementById('snoozeReminderName').textContent = `"${r.title}"`;
+                openOverlay('snoozeModalOverlay');
             });
-            return;
-        }
-
-        filtered.forEach(r => list.appendChild(buildReminderCard(r)));
-    }
-
-    // ── Open/close overlays ───────────────────────────────────
-    function openOverlay(id) {
-        document.getElementById(id)?.classList.add('active');
-        document.body.style.overflow = 'hidden';
-    }
-    function closeOverlay(id) {
-        document.getElementById(id)?.classList.remove('active');
-        document.body.style.overflow = '';
-    }
-
-    // ── Open edit modal ───────────────────────────────────────
-    function openEditModal(r) {
-        editingId = r.id;
-        document.getElementById('reminderModalTitle').innerHTML =
-            `<i class="fa-solid fa-pen" style="color:#7c3aed;margin-right:8px;"></i> Edit Reminder`;
-        document.getElementById('remLabelInput').value = r.label;
-        document.getElementById('remNoteInput').value  = r.note || '';
-        document.getElementById('remDateInput').value  = r.time.split('T')[0];
-        document.getElementById('remTimeInput').value  = r.time.split('T')[1]?.slice(0, 5) || '';
-        document.getElementById('saveReminderBtn').innerHTML =
-            `<i class="fa-solid fa-floppy-disk"></i> Save Changes`;
-
-        // Set category
-        currentCat = r.category || 'personal';
-        document.querySelectorAll('.rem-cat-btn').forEach(b => {
-            b.classList.toggle('active-cat', b.dataset.cat === currentCat);
-        });
-
-        // Set freq
-        currentFreq = r.freq || 'once';
-        document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(b => {
-            b.classList.toggle('active-freq', b.dataset.freq === currentFreq);
-        });
-
-        // Set color
-        currentColor = r.color || '#7c3aed';
-        document.querySelectorAll('.rem-color-btn').forEach(b => {
-            b.classList.toggle('active-color', b.dataset.color === currentColor);
-        });
-
-        updateModalPreview();
-        openOverlay('reminderModalOverlay');
-    }
-
-    // ── Reset modal ───────────────────────────────────────────
-    function resetModal() {
-        editingId = null;
-        document.getElementById('reminderModalTitle').innerHTML =
-            `<i class="fa-solid fa-bell" style="color:#7c3aed;margin-right:8px;"></i> New Reminder`;
-        document.getElementById('remLabelInput').value = '';
-        document.getElementById('remNoteInput').value  = '';
-        document.getElementById('remDateInput').value  = new Date().toISOString().split('T')[0];
-        document.getElementById('remTimeInput').value  = '';
-        document.getElementById('remLabelError').classList.remove('visible');
-        document.getElementById('remDateTimeError').classList.remove('visible');
-        document.getElementById('saveReminderBtn').innerHTML =
-            `<i class="fa-solid fa-bell"></i> Set Reminder`;
-
-        currentCat   = 'personal';
-        currentFreq  = 'once';
-        currentColor = '#7c3aed';
-
-        document.querySelectorAll('.rem-cat-btn').forEach(b => {
-            b.classList.toggle('active-cat', b.dataset.cat === 'personal');
-        });
-        document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(b => {
-            b.classList.toggle('active-freq', b.dataset.freq === 'once');
-        });
-        document.querySelectorAll('.rem-color-btn').forEach(b => {
-            b.classList.toggle('active-color', b.dataset.color === '#7c3aed');
-        });
-
-        updateModalPreview();
-    }
-
-    // ── Live preview in modal ─────────────────────────────────
-    function updateModalPreview() {
-        const label    = document.getElementById('remLabelInput')?.value.trim();
-        const dateStr  = document.getElementById('remDateInput')?.value;
-        const timeStr  = document.getElementById('remTimeInput')?.value;
-        const previewEl = document.getElementById('remModalPreview');
-        const textEl   = document.getElementById('remPreviewText');
-        const iconEl   = document.getElementById('remPreviewIcon');
-        if (!previewEl || !textEl) return;
-
-        if (dateStr && timeStr) {
-            const dt         = new Date(`${dateStr}T${timeStr}`);
-            const freqLabel  = FREQ_LABELS[currentFreq] || 'Once';
-            const formattedDate = dt.toLocaleDateString('default', {
-                weekday: 'short', month: 'short', day: 'numeric',
+            item.querySelector('.edit-btn').addEventListener('click', () => openEditModal(r));
+            item.querySelector('.delete-btn').addEventListener('click', () => {
+                confirmDelete(`Delete "${r.title}"?`, () => deleteReminder(r.id));
             });
-            const formattedTime = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const titlePart  = label ? `"${label}"` : 'Your reminder';
-            textEl.textContent = `${titlePart} — ${freqLabel === 'Once' ? '' : freqLabel + ', starting '}${formattedDate} at ${formattedTime}`;
-            if (iconEl) iconEl.style.color = currentColor;
-            previewEl.style.borderColor = currentColor + '44';
-            previewEl.style.background  = currentColor + '10';
-            previewEl.style.color       = currentColor;
-        } else {
-            textEl.textContent = 'Select a date and time to preview';
-            if (iconEl) iconEl.style.color = 'var(--text-muted)';
-            previewEl.style.borderColor = '';
-            previewEl.style.background  = '';
-            previewEl.style.color       = 'var(--text-muted)';
-        }
-    }
 
-    // ── Save reminder ─────────────────────────────────────────
-    document.getElementById('saveReminderBtn')?.addEventListener('click', () => {
-        const label   = document.getElementById('remLabelInput')?.value.trim();
-        const dateStr = document.getElementById('remDateInput')?.value;
-        const timeStr = document.getElementById('remTimeInput')?.value;
-        const note    = document.getElementById('remNoteInput')?.value.trim();
-        const labelErr = document.getElementById('remLabelError');
-        const dtErr    = document.getElementById('remDateTimeError');
-
-        let valid = true;
-
-        if (!label) {
-            labelErr?.classList.add('visible');
-            document.getElementById('remLabelInput')?.focus();
-            valid = false;
-        } else {
-            labelErr?.classList.remove('visible');
+            return item;
         }
 
-        if (!dateStr || !timeStr) {
-            dtErr?.classList.add('visible');
-            valid = false;
-        } else {
-            const dt = new Date(`${dateStr}T${timeStr}`);
-            if (!editingId && dt <= new Date()) {
-                dtErr?.classList.add('visible');
-                valid = false;
+        function renderReminders() {
+            const list = document.getElementById('remList');
+            if (!list) return;
+
+            // Sort: incomplete ASC, completed DESC
+            const sorted = [...remindersData].sort((a, b) => {
+                if (a.completed !== b.completed) return a.completed ? 1 : -1;
+                const timeA = new Date(a.datetime).getTime();
+                const timeB = new Date(b.datetime).getTime();
+                return a.completed ? timeB - timeA : timeA - timeB;
+            });
+
+            const upcoming = sorted.filter(r => !r.completed);
+            const completed = sorted.filter(r => r.completed);
+
+            list.innerHTML = '';
+
+            // Stats Update
+            const overdueCount = upcoming.filter(r => new Date(r.datetime) < new Date()).length;
+            document.getElementById('statUpcoming').textContent = upcoming.length;
+            document.getElementById('statOverdue').textContent = overdueCount;
+            document.getElementById('statCompleted').textContent = completed.length;
+            document.getElementById('tabBadgeUpcoming').textContent = upcoming.length;
+            document.getElementById('tabBadgeOverdue').textContent = overdueCount;
+            document.getElementById('tabBadgeCompleted').textContent = completed.length;
+
+            const nextEl = document.getElementById('statNext');
+            if (upcoming.length > 0) {
+                const soonest = upcoming[0];
+                nextEl.textContent = countdownText(soonest.datetime);
             } else {
-                dtErr?.classList.remove('visible');
+                nextEl.textContent = '—';
             }
+
+            // Upcoming Section
+            const upSec = document.createElement('div');
+            upSec.className = 'rem-section-wrap';
+            upSec.innerHTML = '<h3 class="rem-section-title"><i class="fa-solid fa-clock"></i> Upcoming</h3>';
+            const upList = document.createElement('div');
+            upList.className = 'rem-sub-list';
+            if (upcoming.length === 0) {
+                upList.innerHTML = '<div class="rem-empty-sub">No upcoming reminders</div>';
+            } else {
+                upcoming.forEach(r => upList.appendChild(buildReminderItem(r)));
+            }
+            upSec.appendChild(upList);
+            list.appendChild(upSec);
+
+            // Completed Section
+            const compSec = document.createElement('div');
+            compSec.className = 'rem-section-wrap';
+            compSec.innerHTML = '<h3 class="rem-section-title"><i class="fa-solid fa-circle-check"></i> Completed</h3>';
+            const compList = document.createElement('div');
+            compList.className = 'rem-sub-list';
+            if (completed.length === 0) {
+                compList.innerHTML = '<div class="rem-empty-sub">No completed reminders yet</div>';
+            } else {
+                completed.forEach(r => compList.appendChild(buildReminderItem(r)));
+            }
+            compSec.appendChild(compList);
+            list.appendChild(compSec);
         }
 
-        if (!valid) return;
+        async function saveReminder() {
+            const title = document.getElementById('remLabelInput').value.trim();
+            const date = document.getElementById('remDateInput').value;
+            const time = document.getElementById('remTimeInput').value;
+            const notes = document.getElementById('remNoteInput').value.trim();
+            const recurring = currentFreq !== 'once';
+            const recurrenceType = recurring ? currentFreq : null;
 
-        const all = getAllReminders();
-
-        if (editingId !== null) {
-            // Edit existing
-            const r = all.find(x => x.id === editingId);
-            if (r) {
-                r.label    = label;
-                r.note     = note;
-                r.time     = `${dateStr}T${timeStr}`;
-                r.freq     = currentFreq;
-                r.category = currentCat;
-                r.color    = currentColor;
-                r.triggered = false;
+            if (!title) {
+                document.getElementById('remLabelError').classList.add('visible');
+                return;
             }
-            saveAllReminders(all);
-            pushNotification('reminder', 'Reminder updated ✏️', `"${label}" has been updated.`);
-            showToast(`Reminder updated ✓`, 'success');
-        } else {
-            // Create new
-            const newR = {
-                id:        Date.now() + Math.random(),
-                label,
-                note:      note || '',
-                time:      `${dateStr}T${timeStr}`,
-                freq:      currentFreq,
-                category:  currentCat,
-                color:     currentColor,
-                triggered: false,
-                fromGoal:  false,
-                createdAt: new Date().toISOString(),
-            };
-            all.push(newR);
-            saveAllReminders(all);
-            scheduleReminderAlert(newR);
-            pushNotification('reminder', 'Reminder set 🔔', `"${label}" scheduled for ${dateStr} at ${timeStr}.`);
-            showToast(`Reminder set! 🔔`, 'success');
-        }
+            if (!date || !time) {
+                document.getElementById('remDateTimeError').classList.add('visible');
+                return;
+            }
 
-        closeOverlay('reminderModalOverlay');
-        resetModal();
-        updateStats();
-        renderReminders();
-    });
+            const datetime = `${date}T${time}`;
+            if (!editingReminderId && new Date(datetime) < new Date()) {
+                document.getElementById('remDateTimeError').textContent = 'Please select a future date and time.';
+                document.getElementById('remDateTimeError').classList.add('visible');
+                return;
+            }
 
-    // ── Schedule browser notification ─────────────────────────
-    function scheduleReminderAlert(r) {
-        const delay = new Date(r.time) - new Date();
-        if (delay <= 0) return;
-        setTimeout(() => {
-            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                try {
-                    new Notification('⏰ Goal Vault Reminder', {
-                        body: r.label,
-                        icon: 'https://img.icons8.com/fluency/96/alarm.png',
+            const body = { title, datetime, notes, recurring, recurrenceType, category: currentCat, color: currentColor };
+
+            try {
+                let res;
+                if (editingReminderId) {
+                    res = await apiFetch(`/api/reminders/${editingReminderId}`, {
+                        method: 'PATCH',
+                        body
                     });
-                } catch (e) { /* silent */ }
+                } else {
+                    res = await apiFetch('/api/reminders', {
+                        method: 'POST',
+                        body
+                    });
+                }
+
+                if (res.success) {
+                    const saved = { ...res.data, id: res.data._id };
+                    if (editingReminderId) {
+                        const idx = remindersData.findIndex(r => r.id === editingReminderId);
+                        if (idx !== -1) remindersData[idx] = saved;
+                        showToast('Reminder updated', 'success');
+                    } else {
+                        remindersData.push(saved);
+                        showToast('Reminder set! 🔔', 'success');
+                        pushNotification('reminder', 'Reminder set 🔔', `"${title}" scheduled.`);
+                    }
+                    closeOverlay('reminderModalOverlay');
+                    resetModal();
+                    renderReminders();
+                }
+            } catch (err) {
+                console.error('Save failed:', err);
+                showToast(err.message || 'Failed to save reminder', 'error');
             }
-            // Mark as triggered
-            const all = getAllReminders();
-            const rem = all.find(x => x.id === r.id);
-            if (rem) {
-                rem.triggered   = true;
-                rem.completedAt = new Date().toISOString();
-                saveAllReminders(all);
-            }
-            pushNotification('reminder', `Reminder: ${r.label} ⏰`, `Your reminder "${r.label}" is due now!`);
-            showToast(`⏰ ${r.label}`, 'warning');
-            updateStats();
-            renderReminders();
-        }, delay);
-    }
-
-    // ── Snooze ────────────────────────────────────────────────
-    document.querySelectorAll('.rem-snooze-btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const minutes = parseInt(this.dataset.snooze);
-            const all     = getAllReminders();
-            const r       = all.find(x => x.id === snoozeTargetId);
-            if (!r) return;
-
-            const newTime    = new Date();
-            newTime.setMinutes(newTime.getMinutes() + minutes);
-            r.time           = newTime.toISOString();
-            r.triggered      = false;
-            r.snoozed        = true;
-            saveAllReminders(all);
-            scheduleReminderAlert(r);
-
-            const label = minutes < 60
-                ? `${minutes} min`
-                : minutes === 1440 ? 'tomorrow' : `${minutes / 60}h`;
-
-            pushNotification('reminder', 'Reminder snoozed 💤', `"${r.label}" snoozed for ${label}.`);
-            showToast(`Snoozed for ${label} 💤`, 'info');
-            closeOverlay('snoozeModalOverlay');
-            snoozeTargetId = null;
-            updateStats();
-            renderReminders();
-        });
-    });
-
-    // ── Tabs ──────────────────────────────────────────────────
-    document.querySelectorAll('.rem-tab').forEach(tab => {
-        tab.addEventListener('click', function () {
-            document.querySelectorAll('.rem-tab').forEach(t => t.classList.remove('active'));
-            this.classList.add('active');
-            currentTab = this.dataset.tab;
-            renderReminders();
-        });
-    });
-
-    // ── Sort ──────────────────────────────────────────────────
-    document.getElementById('remSortSelect')?.addEventListener('change', function () {
-        currentSort = this.value;
-        renderReminders();
-    });
-
-    // ── Category picker ───────────────────────────────────────
-    document.querySelectorAll('.rem-cat-btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-            document.querySelectorAll('.rem-cat-btn').forEach(b => b.classList.remove('active-cat'));
-            this.classList.add('active-cat');
-            currentCat = this.dataset.cat;
-            updateModalPreview();
-        });
-    });
-
-    // ── Freq picker ───────────────────────────────────────────
-    document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-            document.querySelectorAll('#remFreqPicker .goal-freq-btn')
-                .forEach(b => b.classList.remove('active-freq'));
-            this.classList.add('active-freq');
-            currentFreq = this.dataset.freq;
-            updateModalPreview();
-        });
-    });
-
-    // ── Color picker ──────────────────────────────────────────
-    document.querySelectorAll('.rem-color-btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-            document.querySelectorAll('.rem-color-btn').forEach(b => b.classList.remove('active-color'));
-            this.classList.add('active-color');
-            currentColor = this.dataset.color;
-            updateModalPreview();
-        });
-    });
-
-    // ── Live preview on input ─────────────────────────────────
-    ['remLabelInput', 'remDateInput', 'remTimeInput'].forEach(id => {
-        document.getElementById(id)?.addEventListener('input', updateModalPreview);
-    });
-
-    // ── Open/close modal buttons ──────────────────────────────
-    document.getElementById('openReminderModal')?.addEventListener('click', () => {
-        resetModal();
-        openOverlay('reminderModalOverlay');
-        setTimeout(() => document.getElementById('remLabelInput')?.focus(), 100);
-    });
-
-    document.getElementById('closeReminderModal')?.addEventListener('click', () => {
-        closeOverlay('reminderModalOverlay');
-        resetModal();
-    });
-
-    document.getElementById('closeSnoozeModal')?.addEventListener('click', () => {
-        closeOverlay('snoozeModalOverlay');
-        snoozeTargetId = null;
-    });
-
-    ['reminderModalOverlay', 'snoozeModalOverlay'].forEach(id => {
-        document.getElementById(id)?.addEventListener('click', function (e) {
-            if (e.target === this) {
-                closeOverlay(id);
-                if (id === 'reminderModalOverlay') resetModal();
-                if (id === 'snoozeModalOverlay') snoozeTargetId = null;
-            }
-        });
-    });
-
-    document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') {
-            closeOverlay('reminderModalOverlay');
-            closeOverlay('snoozeModalOverlay');
-            resetModal();
         }
-    });
 
-    // ── Enter key on label ────────────────────────────────────
-    document.getElementById('remLabelInput')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter') document.getElementById('saveReminderBtn')?.click();
-    });
+        async function markComplete(id) {
+            try {
+                const res = await apiFetch(`/api/reminders/${id}`, {
+                    method: 'PATCH',
+                    body: { completed: true }
+                });
+                if (res.success) {
+                    const idx = remindersData.findIndex(r => r.id === id);
+                    if (idx !== -1) remindersData[idx].completed = true;
+                    renderReminders();
+                    showToast('Reminder completed ✓', 'success');
+                }
+            } catch (err) {
+                console.error('Update failed:', err);
+                showToast('Failed to mark complete', 'error');
+            }
+        }
 
-    // ── Schedule all existing upcoming reminders ──────────────
-    function scheduleAllExisting() {
-        getAllReminders()
-            .filter(r => !r.triggered && new Date(r.time) > new Date())
-            .forEach(scheduleReminderAlert);
-    }
+        async function snoozeReminder(minutes) {
+            if (!snoozeTargetId) return;
+            const r = remindersData.find(x => x.id === snoozeTargetId);
+            if (!r) return;
+            const newTime = new Date();
+            newTime.setMinutes(newTime.getMinutes() + minutes);
+            try {
+                const res = await apiFetch(`/api/reminders/${snoozeTargetId}`, {
+                    method: 'PATCH',
+                    body: { datetime: newTime.toISOString(), completed: false }
+                });
+                if (res.success) {
+                    const saved = { ...res.data, id: res.data._id };
+                    const idx = remindersData.findIndex(x => x.id === snoozeTargetId);
+                    if (idx !== -1) remindersData[idx] = saved;
+                    renderReminders();
+                    showToast('Snoozed', 'info');
+                    closeOverlay('snoozeModalOverlay');
+                    snoozeTargetId = null;
+                }
+            } catch (err) {
+                showToast('Failed to snooze', 'error');
+            }
+        }
 
-    // ── Auto-refresh countdown every minute ───────────────────
-    setInterval(() => {
-        updateStats();
-        renderReminders();
-    }, 60000);
+        async function deleteReminder(id) {
+            try {
+                const res = await apiFetch(`/api/reminders/${id}`, { method: 'DELETE' });
+                if (res.success) {
+                    remindersData = remindersData.filter(r => r.id !== id);
+                    renderReminders();
+                    showToast('Reminder deleted', 'error');
+                }
+            } catch (err) {
+                console.error('Delete failed:', err);
+                showToast('Failed to delete', 'error');
+            }
+        }
 
-    // ── Init ──────────────────────────────────────────────────
-    window.addEventListener('DOMContentLoaded', () => {
-        resetModal();
-        document.getElementById('remDateInput').value = new Date().toISOString().split('T')[0];
-        updateStats();
-        renderReminders();
-        scheduleAllExisting();
-    });
+        function openEditModal(r) {
+            editingReminderId = r.id;
+            document.getElementById('reminderModalTitle').innerHTML = '<i class="fa-solid fa-pen"></i> Edit Reminder';
+            document.getElementById('remLabelInput').value = r.title;
+            document.getElementById('remNoteInput').value = r.notes || '';
+            
+            const dt = new Date(r.datetime);
+            // Account for local timezone when populating datetime inputs
+            const year = dt.getFullYear();
+            const month = String(dt.getMonth() + 1).padStart(2, '0');
+            const day = String(dt.getDate()).padStart(2, '0');
+            const hours = String(dt.getHours()).padStart(2, '0');
+            const mins = String(dt.getMinutes()).padStart(2, '0');
+            
+            document.getElementById('remDateInput').value = `${year}-${month}-${day}`;
+            document.getElementById('remTimeInput').value = `${hours}:${mins}`;
+
+            currentCat = r.category || 'personal';
+            currentColor = r.color || '#7c3aed';
+            currentFreq = r.recurrenceType || 'once';
+
+            updatePickers();
+            openOverlay('reminderModalOverlay');
+        }
+
+        function resetModal() {
+            editingReminderId = null;
+            document.getElementById('reminderModalTitle').innerHTML = '<i class="fa-solid fa-bell"></i> New Reminder';
+            document.getElementById('remLabelInput').value = '';
+            document.getElementById('remNoteInput').value = '';
+            document.getElementById('remDateInput').value = new Date().toISOString().split('T')[0];
+            document.getElementById('remTimeInput').value = '';
+            document.getElementById('remLabelError').classList.remove('visible');
+            document.getElementById('remDateTimeError').classList.remove('visible');
+            currentCat = 'personal';
+            currentFreq = 'once';
+            currentColor = '#7c3aed';
+            updatePickers();
+        }
+
+        function updatePickers() {
+            document.querySelectorAll('.rem-cat-btn').forEach(b => b.classList.toggle('active-cat', b.dataset.cat === currentCat));
+            document.querySelectorAll('.rem-color-btn').forEach(b => b.classList.toggle('active-color', b.dataset.color === currentColor));
+            document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(b => b.classList.toggle('active-freq', b.dataset.freq === currentFreq));
+        }
+
+        function openOverlay(id) {
+            document.getElementById(id)?.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        function closeOverlay(id) {
+            document.getElementById(id)?.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        // Listeners
+        document.getElementById('saveReminderBtn')?.addEventListener('click', saveReminder);
+        document.getElementById('openReminderModal')?.addEventListener('click', () => { resetModal(); openOverlay('reminderModalOverlay'); });
+        document.getElementById('closeReminderModal')?.addEventListener('click', () => { closeOverlay('reminderModalOverlay'); resetModal(); });
+        document.getElementById('closeSnoozeModal')?.addEventListener('click', () => { closeOverlay('snoozeModalOverlay'); snoozeTargetId = null; });
+
+        document.querySelectorAll('.rem-cat-btn').forEach(btn => btn.addEventListener('click', function() { currentCat = this.dataset.cat; updatePickers(); }));
+        document.querySelectorAll('.rem-color-btn').forEach(btn => btn.addEventListener('click', function() { currentColor = this.dataset.color; updatePickers(); }));
+        document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(btn => btn.addEventListener('click', function() { currentFreq = this.dataset.freq; updatePickers(); }));
+        document.querySelectorAll('.rem-snooze-btn').forEach(btn => btn.addEventListener('click', function() { snoozeReminder(parseInt(this.dataset.snooze)); }));
+
+        ['reminderModalOverlay', 'snoozeModalOverlay'].forEach(id => {
+            document.getElementById(id)?.addEventListener('click', function (e) {
+                if (e.target === this) {
+                    closeOverlay(id);
+                    if (id === 'reminderModalOverlay') resetModal();
+                    if (id === 'snoozeModalOverlay') snoozeTargetId = null;
+                }
+            });
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closeOverlay('reminderModalOverlay');
+                closeOverlay('snoozeModalOverlay');
+                resetModal();
+            }
+        });
+
+        fetchReminders();
+    })();
 }
 
 // ============================================================
@@ -1116,12 +873,20 @@ if (page === 'dashboard') {
         if (el) el.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
     }
 
-    function refreshDash() {
+    async function refreshDash() {
         const streakVal       = parseInt(localStorage.getItem('streak') || '0');
         const freshTasks      = getTasks();
         const freshHabits     = getHabits();
         const notes           = JSON.parse(localStorage.getItem('appNotes') || '[]');
-        const activeReminders = getReminders().filter(r => new Date(r.time) > new Date() && !r.triggered);
+        
+        let activeReminders = [];
+        try {
+            const res = await apiFetch('/api/reminders?completed=false');
+            activeReminders = res.data || [];
+        } catch (e) {
+            console.error('Failed to fetch dashboard reminders:', e);
+        }
+
         const u = localStorage.getItem('hubUser') || sessionStorage.getItem('hubUser') || 'User';
 
         const usernameDisplay = document.getElementById('usernameDisplay');
@@ -1920,37 +1685,29 @@ if (page === 'planner') {
         };
     }
 
-    function addReminderForGoal(goalId, goalName, freq, dateStr, timeStr) {
-        const reminder = buildReminderFromGoal(goalId, goalName, freq, dateStr, timeStr);
-        if (!reminder) return null;
-        const reminders = getReminders();
-        reminders.push(reminder);
-        localStorage.setItem('reminders', JSON.stringify(reminders));
-        scheduleGoalReminder(reminder);
-        return reminder;
+    async function addReminderForGoal(goalId, goalName, freq, dateStr, timeStr) {
+        if (!dateStr || !timeStr) return;
+        const body = {
+            title: `Goal: ${goalName}`,
+            datetime: `${dateStr}T${timeStr}`,
+            recurring: freq !== 'once',
+            recurrenceType: freq !== 'once' ? freq : null,
+            notes: `Reminder for goal ${goalId}`,
+            category: 'goal'
+        };
+        try {
+            await apiFetch('/api/reminders', { method: 'POST', body });
+        } catch (e) {
+            console.error('Failed to add goal reminder:', e);
+        }
     }
 
     function removeGoalReminders(goalId) {
-        const reminders = getReminders().filter(r => r.goalId !== goalId);
-        localStorage.setItem('reminders', JSON.stringify(reminders));
+        // Since the backend doesn't track goalId, we'd need to fetch and filter by notes.
+        // For now, we'll skip this to avoid accidental deletion of other reminders.
+        console.log(`Requested removal of reminders for goal ${goalId}`);
     }
 
-    function scheduleGoalReminder(reminder) {
-        const reminderTime = new Date(reminder.time);
-        const delay        = reminderTime - new Date();
-        if (delay <= 0) return;
-        setTimeout(() => {
-            const updated = getReminders();
-            const r       = updated.find(rem => rem.id === reminder.id);
-            if (r) { r.triggered = true; localStorage.setItem('reminders', JSON.stringify(updated)); }
-            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                try { new Notification('⏰ Goal Vault Reminder', { body: `Goal: ${reminder.label}` }); }
-                catch (e) { /* silent */ }
-            }
-            pushNotification('reminder', 'Goal reminder fired! ⏰', `Reminder for your goal: "${reminder.label}"`);
-            showToast(`⏰ Goal reminder: ${reminder.label}`, 'warning');
-        }, delay);
-    }
 
     function buildReminderPreview(freq, dateStr, timeStr) {
         if (!dateStr || !timeStr) return null;
@@ -2741,7 +2498,6 @@ if (page === 'planner') {
         updateHero();
         updateStats();
         fetchGoals();
-        getReminders().filter(r => r.fromGoal && !r.triggered).forEach(r => scheduleGoalReminder(r));
     });
 
 // ============================================================

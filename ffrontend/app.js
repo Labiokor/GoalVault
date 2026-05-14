@@ -403,6 +403,7 @@ const page = (() => {
     if (p === 'notebook.html')            return 'notebook';
     if (p === 'account.html')             return 'account';
     if (p === 'notifications.html')       return 'notifications';
+    if (p === 'alerts.html')              return 'alerts';
     if (p === 'reminders.html')           return 'reminders';
     return 'dashboard';
 })();
@@ -2546,6 +2547,8 @@ if (page === 'planner') {
         updateStats();
         fetchGoals();
     });
+}
+
 
 // ============================================================
 // NOTEBOOK PAGE
@@ -2979,10 +2982,10 @@ if (page === 'account') {
 
 
 // ============================================================
-// NOTIFICATIONS PAGE
+// ALERTS / NOTIFICATIONS PAGE
 // ============================================================
-if (page === 'notifications') {
-    let activeFilter = 'all';
+if (page === 'notifications' || page === 'alerts') {
+    let activeNotifFilter = 'all';
 
     async function fetchNotifications() {
         try {
@@ -2999,10 +3002,16 @@ if (page === 'notifications') {
         const notifList = document.getElementById('notifList');
         if (!notifList) return;
 
-        // Filter
-        let filtered = activeFilter === 'all' 
-            ? notificationsData 
-            : notificationsData.filter(n => n.type === activeFilter);
+        // Filter logic
+        let filtered = notificationsData;
+        if (activeNotifFilter === 'unread') {
+            filtered = notificationsData.filter(n => !n.read);
+        } else if (activeNotifFilter === 'read') {
+            filtered = notificationsData.filter(n => n.read);
+        } else if (activeNotifFilter !== 'all') {
+            // Support for type filtering if present
+            filtered = notificationsData.filter(n => n.type === activeNotifFilter);
+        }
 
         // Sort: Unread first, then date descending
         filtered.sort((a, b) => {
@@ -3012,30 +3021,50 @@ if (page === 'notifications') {
 
         // Update counts
         const countLabel = document.getElementById('notifCountLabel');
-        if (countLabel) countLabel.textContent = `${filtered.length} notification${filtered.length === 1 ? '' : 's'}`;
+        if (countLabel) {
+            const noun = page === 'alerts' ? 'alert' : 'notification';
+            countLabel.textContent = `${filtered.length} ${noun}${filtered.length === 1 ? '' : 's'}`;
+        }
 
         const currentUnread = notificationsData.filter(n => !n.read).length;
         const unreadBanner = document.getElementById('notifUnreadBanner');
         const unreadText = document.getElementById('notifUnreadText');
         if (unreadBanner) {
             unreadBanner.style.display = currentUnread > 0 ? 'flex' : 'none';
-            if (unreadText) unreadText.textContent = currentUnread === 1 ? '1 unread notification' : `${currentUnread} unread notifications`;
+            if (unreadText) {
+                const noun = page === 'alerts' ? 'alert' : 'notification';
+                unreadText.textContent = currentUnread === 1 ? `1 unread ${noun}` : `${currentUnread} unread ${noun}s`;
+            }
         }
 
         // Disable/hide "Mark all read" if no unread
         const markAllBtn = document.getElementById('markAllReadBtn');
         if (markAllBtn) markAllBtn.disabled = currentUnread === 0;
 
+        // Disable "Clear all" if no notifications at all
+        const clearAllBtn = document.getElementById('clearAllNotifs');
+        if (clearAllBtn) clearAllBtn.disabled = notificationsData.length === 0;
+
         if (filtered.length === 0) {
+            let emptyMsg = 'All caught up!';
+            let emptySub = 'No notifications yet. Start adding tasks, habits, and goals!';
+            
+            if (activeNotifFilter === 'unread') {
+                emptyMsg = 'No unread alerts';
+                emptySub = 'You have read all your notifications.';
+            } else if (activeNotifFilter === 'read') {
+                emptyMsg = 'No read alerts';
+                emptySub = 'You haven\'t read any notifications yet.';
+            } else if (activeNotifFilter !== 'all') {
+                emptyMsg = `No ${activeNotifFilter} alerts`;
+                emptySub = `You don't have any notifications of type "${activeNotifFilter}".`;
+            }
+
             notifList.innerHTML = `
                 <div class="notif-empty">
                     <div class="notif-empty-icon">🔔</div>
-                    <div class="notif-empty-title">All caught up!</div>
-                    <div class="notif-empty-sub">
-                        ${activeFilter === 'all'
-                            ? 'No notifications yet. Start adding tasks, habits, and goals!'
-                            : `No ${activeFilter} notifications yet.`}
-                    </div>
+                    <div class="notif-empty-title">${emptyMsg}</div>
+                    <div class="notif-empty-sub">${emptySub}</div>
                 </div>`;
             return;
         }
@@ -3053,7 +3082,8 @@ if (page === 'notifications') {
                 <div class="notif-item${n.read ? '' : ' unread'}" 
                      data-id="${n.id}" 
                      data-reference-id="${n.reference?.documentId || ''}" 
-                     data-reference-type="${n.reference?.model || ''}">
+                     data-reference-type="${n.reference?.model || ''}"
+                     style="cursor: ${n.reference?.documentId ? 'pointer' : 'default'}">
                     <div class="notif-icon-bubble ${n.type}">${typeConfig.icon}</div>
                     <div class="notif-content">
                         <div class="notif-title">${n.title}</div>
@@ -3071,6 +3101,18 @@ if (page === 'notifications') {
         notifList.innerHTML = html;
 
         // Event Listeners
+        notifList.querySelectorAll('.notif-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const refId = item.dataset.referenceId;
+                const refType = item.dataset.referenceType;
+                if (refId && refType) {
+                    if (refType === 'Goal') window.location.href = 'planner.html';
+                    else if (refType === 'Habit') window.location.href = 'habits.html';
+                    else if (refType === 'Task') window.location.href = 'tasks.html';
+                    else if (refType === 'Note') window.location.href = 'notebook.html';
+                }
+            });
+        });
         notifList.querySelectorAll('[data-read]').forEach(btn => {
             btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
@@ -3151,7 +3193,7 @@ if (page === 'notifications') {
         btn.addEventListener('click', function () {
             document.querySelectorAll('.notif-filter-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-            activeFilter = this.dataset.filter;
+            activeNotifFilter = this.dataset.filter;
             renderNotifications();
         });
     });
@@ -3160,5 +3202,4 @@ if (page === 'notifications') {
     document.getElementById('clearAllNotifs')?.addEventListener('click', clearAllNotifications);
 
     window.addEventListener('DOMContentLoaded', fetchNotifications);
-}
-}
+};

@@ -160,9 +160,30 @@ function computeStreakFromHabits(habitsArray) {
     return count;
 }
 
+/**
+ * Fetches habits from the API on every page load (silently)
+ * and updates the global streak + nav icon so all pages stay in sync.
+ */
+async function syncStreakGlobally() {
+    try {
+        const token = localStorage.getItem('gv_token');
+        if (!token) return; // not logged in yet
+        const res = await apiFetch('/api/habits');
+        if (res && res.data) {
+            const computed = computeStreakFromHabits(res.data);
+            streak = computed;
+            localStorage.setItem('streak', computed);
+            updateStreakDisplay();
+        }
+    } catch (e) {
+        // Silently fail — streak stays at last cached value
+    }
+}
+
 function initGlobals() {
     updateNotifBadge();
     autoSetNavActive();
+    syncStreakGlobally(); // keep streak in sync on every page
 }
 if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', initGlobals);
@@ -1457,6 +1478,7 @@ if (page === 'habits') {
             const res = await apiFetch('/api/habits');
             if (res.data) habitsData = res.data.map(h => ({ ...h, id: h._id }));
             loadHabits();
+            renderCalendar(); // render calendar with real API data
         } catch (err) {
             console.error(err);
             habitContainer.innerHTML = `<div style="color:#ef4444;text-align:center;padding:20px;">Failed to load habits.</div>`;

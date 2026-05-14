@@ -127,6 +127,39 @@ function getLocalYYYYMMDD(dateObj = new Date()) {
     return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
 }
 
+/**
+ * Derives the current daily streak from live habit API data.
+ * A day "counts" if at least one habit was completed on it.
+ * Walks backwards from today until it finds a gap.
+ */
+function computeStreakFromHabits(habitsArray) {
+    if (!habitsArray || habitsArray.length === 0) return 0;
+
+    // Build a Set of all dates that had at least 1 completion
+    const activeDays = new Set();
+    habitsArray.forEach(h => {
+        (h.completedDates || []).forEach(d => {
+            activeDays.add(getLocalYYYYMMDD(new Date(d)));
+        });
+    });
+
+    let count = 0;
+    const today = new Date();
+    for (let i = 0; i <= 365; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dateStr = getLocalYYYYMMDD(d);
+        if (activeDays.has(dateStr)) {
+            count++;
+        } else {
+            // Allow today to be incomplete without breaking streak
+            if (i === 0) continue;
+            break;
+        }
+    }
+    return count;
+}
+
 function initGlobals() {
     updateNotifBadge();
     autoSetNavActive();

@@ -5,6 +5,7 @@ const root = document.getElementById('page-root')
 let allNotes = []
 let activeNote = null
 let activeCategory = 'all'
+let searchQuery = ''
 
 async function init() {
   root.innerHTML = '<div class="flex items-center justify-center py-12 text-on-surface-variant gap-2"><span class="material-symbols-outlined">progress_activity</span><span class="text-sm">Loading notes...</span></div>'
@@ -28,6 +29,14 @@ function renderPage() {
         <div class="p-5 border-b border-surface-container-high" style="background:linear-gradient(135deg,#f59e0b 0%,#d97706 100%)">
           <h2 class="text-xl font-black text-white tracking-tight mb-1">My Notes</h2>
           <p class="text-white/70 text-xs">${allNotes.length} note${allNotes.length !== 1 ? 's' : ''}</p>
+          
+          <!-- Search bar -->
+          <div class="mt-3 relative">
+            <span class="material-symbols-outlined absolute left-2 top-1/2 transform -translate-y-1/2 text-white/60 text-sm">search</span>
+            <input id="notes-search-input" type="text" placeholder="Search notes..." 
+                   class="w-full pl-8 pr-3 py-1.5 rounded-lg bg-white/20 text-white placeholder:text-white/60 outline-none text-xs focus:bg-white/30 transition-all">
+          </div>
+          
           <div class="flex gap-2 mt-3 overflow-x-auto no-scrollbar">
             <button class="cat-btn px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap bg-white/20 text-white" data-cat="all">All</button>
             <button class="cat-btn px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap bg-white/10 text-white/80 hover:bg-white/20" data-cat="personal">Personal</button>
@@ -78,18 +87,41 @@ function renderPage() {
   document.getElementById('empty-new-note')?.addEventListener('click', createNote)
 }
 
+function getDateGroup(dateStr) {
+  const now = new Date()
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const noteDate = new Date(dateStr)
+  const noteDateOnly = new Date(noteDate.getFullYear(), noteDate.getMonth(), noteDate.getDate())
+  const diffDays = Math.floor((today - noteDateOnly) / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) return 'Today'
+  if (diffDays === 1) return 'Yesterday'
+  if (diffDays <= 7) return 'This Week'
+  if (diffDays <= 30) return 'This Month'
+  if (noteDate.getFullYear() === now.getFullYear()) return new Date(dateStr).toLocaleDateString('en-US', { month: 'short' })
+  return 'Older'
+}
+
 function renderNotesList() {
   const list = document.getElementById('notes-list')
   if (!list) return
 
-  const filtered = activeCategory === 'all'
+  let filtered = activeCategory === 'all'
     ? allNotes
     : allNotes.filter(n => n.category === activeCategory)
+  
+  if (searchQuery.trim()) {
+    const query = searchQuery.toLowerCase()
+    filtered = filtered.filter(n => 
+      (n.title || '').toLowerCase().includes(query) || 
+      (n.content || '').toLowerCase().includes(query)
+    )
+  }
 
   if (filtered.length === 0) {
     list.innerHTML = '<div class="flex flex-col items-center justify-center py-8 gap-2 text-center">'
       + '<span class="material-symbols-outlined text-3xl opacity-30" style="color:#f59e0b">description</span>'
-      + '<p class="text-xs text-on-surface-variant">No notes in this category</p>'
+      + '<p class="text-xs text-on-surface-variant">' + (searchQuery ? 'No notes match your search' : 'No notes in this category') + '</p>'
       + '</div>'
     return
   }
@@ -101,27 +133,44 @@ function renderNotesList() {
     ideas:    '#d97706'
   }
 
-  let html = ''
-  filtered.forEach(note => {
-    const isActive = activeNote && activeNote._id === note._id
-    const color = catColors[note.category] || '#f59e0b'
+  const sortedNotes = [...filtered].sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+  const grouped = {}
+  sortedNotes.forEach(note => {
+    const group = getDateGroup(note.updatedAt)
+    if (!grouped[group]) grouped[group] = []
+    grouped[group].push(note)
+  })
 
-    html += '<div class="note-card-item p-4 rounded-xl cursor-pointer transition-all '
-      + (isActive ? 'shadow-md' : 'hover:bg-amber-50')
-      + '" style="'
-      + (isActive ? 'background:white;border:2px solid rgba(245,158,11,0.3)' : 'background:transparent')
-      + '" data-id="' + note._id + '">'
-      + '<div class="flex justify-between items-start mb-1">'
-      + '<span class="text-[10px] font-bold uppercase tracking-widest" style="color:' + color + '">' + note.category + '</span>'
-      + '<div class="flex items-center gap-1">'
-      + (note.pinned ? '<span class="material-symbols-outlined text-xs" style="color:#f59e0b;font-variation-settings:\'FILL\' 1">push_pin</span>' : '')
-      + '<span class="text-[10px] text-on-surface-variant">' + timeAgo(note.updatedAt) + '</span>'
-      + '</div>'
-      + '</div>'
-      + '<h3 class="font-bold text-on-surface text-sm truncate">' + (note.title || 'Untitled') + '</h3>'
-      + '<p class="text-xs text-on-surface-variant mt-1" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'
-      + (note.content || '') + '</p>'
-      + '</div>'
+  const groupOrder = ['Today', 'Yesterday', 'This Week', 'This Month', 'Older']
+  let html = ''
+  
+  groupOrder.forEach(groupName => {
+    if (!grouped[groupName]) return
+    
+    html += '<div class="text-[10px] font-black uppercase tracking-widest text-on-surface-variant px-2 py-2 mt-2 mb-1" style="opacity:0.6">'
+      + groupName + '</div>'
+    
+    grouped[groupName].forEach(note => {
+      const isActive = activeNote && activeNote._id === note._id
+      const color = catColors[note.category] || '#f59e0b'
+
+      html += '<div class="note-card-item p-4 rounded-xl cursor-pointer transition-all '
+        + (isActive ? 'shadow-md' : 'hover:bg-amber-50')
+        + '" style="'
+        + (isActive ? 'background:white;border:2px solid rgba(245,158,11,0.3)' : 'background:transparent')
+        + '" data-id="' + note._id + '">'
+        + '<div class="flex justify-between items-start mb-1">'
+        + '<span class="text-[10px] font-bold uppercase tracking-widest" style="color:' + color + '">' + note.category + '</span>'
+        + '<div class="flex items-center gap-1">'
+        + (note.pinned ? '<span class="material-symbols-outlined text-xs" style="color:#f59e0b;font-variation-settings:\'FILL\' 1">push_pin</span>' : '')
+        + '<span class="text-[10px] text-on-surface-variant">' + timeAgo(note.updatedAt) + '</span>'
+        + '</div>'
+        + '</div>'
+        + '<h3 class="font-bold text-on-surface text-sm truncate">' + (note.title || 'Untitled') + '</h3>'
+        + '<p class="text-xs text-on-surface-variant mt-1" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">'
+        + (note.content || '') + '</p>'
+        + '</div>'
+    })
   })
 
   list.innerHTML = html
@@ -260,6 +309,11 @@ function attachEvents() {
 
   document.getElementById('new-note-btn')?.addEventListener('click', createNote)
   document.getElementById('fab')?.addEventListener('click', createNote)
+
+  document.getElementById('notes-search-input')?.addEventListener('input', (e) => {
+    searchQuery = e.target.value
+    renderNotesList()
+  })
 
   document.getElementById('notes-list')?.addEventListener('click', (e) => {
     const card = e.target.closest('.note-card-item')

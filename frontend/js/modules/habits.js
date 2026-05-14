@@ -31,15 +31,8 @@ function renderPage() {
     return last.getTime() === today.getTime()
   }).length
 
-  const heroTitle = allHabits.length === 0
-    ? 'Build great habits, ' + firstName + '!'
-    : completedToday === allHabits.length
-      ? 'Crushing it today, ' + firstName + '!'
-      : 'Stay consistent, ' + firstName + '!'
-
-  const heroMsg = allHabits.length === 0
-    ? 'Habits compound over time. Start with one small action done consistently.'
-    : completedToday + ' of ' + allHabits.length + ' habits done today. ' + (completedToday === allHabits.length ? 'Perfect day!' : 'Keep going!')
+  const heroTitle = 'Daily Habits'
+  const heroMsg = 'Consistency is the bridge between goals and accomplishment.'
 
   root.innerHTML = `
     <div class="max-w-5xl mx-auto">
@@ -73,6 +66,64 @@ function renderPage() {
         <div class="bg-surface-container-lowest p-5 rounded-xl text-center ring-1 ring-outline-variant/5">
           <p class="text-2xl font-black font-headline text-primary">${bestStreak}</p>
           <p class="text-xs text-on-surface-variant uppercase font-bold mt-1">Best Streak</p>
+        </div>
+      </div>
+
+      <!-- Weekly Performance Chart -->
+      <div class="bg-surface-container-lowest p-6 rounded-xl mb-8">
+        <h3 class="text-sm font-bold text-on-surface mb-4">Weekly Performance</h3>
+        <div class="flex items-end justify-between gap-3 h-40" id="weekly-chart">
+          ${['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => `
+            <div class="flex flex-col items-center gap-2 flex-1">
+              <div class="w-full rounded-t-lg transition-all" style="height: 120px; background: rgba(105,246,184,0.3); opacity: 0.6;" data-day-index="${i}"></div>
+              <span class="text-xs font-bold text-on-surface-variant">${day}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Calendar View -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+        <div class="bg-surface-container-lowest p-6 rounded-xl">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-bold text-on-surface">Calendar</h3>
+            <div class="flex gap-2">
+              <button id="cal-prev" class="p-1.5 hover:bg-surface-container-high rounded-lg transition-colors">
+                <span class="material-symbols-outlined text-sm">chevron_left</span>
+              </button>
+              <span id="cal-month" class="text-xs font-bold text-on-surface-variant px-3 py-1"></span>
+              <button id="cal-next" class="p-1.5 hover:bg-surface-container-high rounded-lg transition-colors">
+                <span class="material-symbols-outlined text-sm">chevron_right</span>
+              </button>
+            </div>
+          </div>
+          <div class="grid grid-cols-7 gap-1" id="cal-grid">
+            ${['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => `<div class="text-[10px] font-bold text-on-surface-variant text-center py-1">${day}</div>`).join('')}
+          </div>
+        </div>
+
+        <!-- Stats Box -->
+        <div class="bg-surface-container-lowest p-6 rounded-xl">
+          <h3 class="text-sm font-bold text-on-surface mb-4">Statistics</h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-on-surface-variant">Completed this week</span>
+              <span class="text-sm font-bold text-tertiary" id="stat-week">0</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-on-surface-variant">Completed today</span>
+              <span class="text-sm font-bold text-primary" id="stat-today">0</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-xs text-on-surface-variant">Completion rate</span>
+              <span class="text-sm font-bold text-secondary" id="stat-rate">0%</span>
+            </div>
+            <div class="h-px bg-outline-variant my-2"></div>
+            <div class="flex items-center justify-between pt-2">
+              <span class="text-xs font-bold text-on-surface">Longest streak</span>
+              <span class="text-lg font-black text-tertiary">${bestStreak}d</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -116,6 +167,11 @@ function renderPage() {
             <p class="text-xs font-black uppercase tracking-widest text-on-surface-variant mb-3">Consistency Challenge</p>
             <p class="text-xs text-on-surface-variant mb-3">Can you stay consistent? Pick a challenge to unlock rewards.</p>
             <div class="grid grid-cols-2 gap-2">
+              <button type="button" class="challenge-btn p-3 rounded-xl border-2 border-outline-variant/20 text-center hover:border-tertiary transition-all" data-days="3">
+                <span class="text-xl">🔥</span>
+                <p class="text-xs font-bold text-on-surface mt-1">3 Days</p>
+                <p class="text-[10px] text-on-surface-variant">Fire</p>
+              </button>
               <button type="button" class="challenge-btn p-3 rounded-xl border-2 border-outline-variant/20 text-center hover:border-tertiary transition-all" data-days="7">
                 <span class="text-xl">🏆</span>
                 <p class="text-xs font-bold text-on-surface mt-1">7 Days</p>
@@ -308,6 +364,8 @@ function attachEvents() {
   })
   document.getElementById('save-habit-btn')?.addEventListener('click', saveHabit)
   document.getElementById('fab')?.addEventListener('click', openModal)
+  
+  initWeeklyChart()
 
   document.querySelectorAll('.challenge-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -339,6 +397,17 @@ function attachEvents() {
     const deleteBtn = e.target.closest('.delete-habit-btn')
     if (completeBtn && !completeBtn.disabled) await completeHabit(completeBtn.dataset.id)
     if (deleteBtn && confirm('Delete this habit?')) await deleteHabit(deleteBtn.dataset.id)
+  })
+
+  // Calendar navigation
+  document.getElementById('cal-prev')?.addEventListener('click', () => {
+    currentCalendarDate.setMonth(currentCalendarDate.getMonth() - 1)
+    updateCalendar()
+  })
+
+  document.getElementById('cal-next')?.addEventListener('click', () => {
+    currentCalendarDate.setMonth(currentCalendarDate.getMonth() + 1)
+    updateCalendar()
   })
 }
 
@@ -409,13 +478,15 @@ async function completeHabit(id) {
     if (idx !== -1) allHabits[idx] = res.data
 
     const updatedHabit = res.data
-    const milestones = [7, 14, 21, 30]
+    const milestones = [3, 7, 14, 21, 30, 60, 100]
 
     if (milestones.includes(updatedHabit.currentstreak)) {
       renderPage()
+      initWeeklyChart()
       setTimeout(() => showMilestoneReward(updatedHabit.currentstreak, updatedHabit.name), 300)
     } else {
       renderPage()
+      initWeeklyChart()
     }
   } catch (err) {
     alert('Failed: ' + err.message)
@@ -433,8 +504,8 @@ async function deleteHabit(id) {
 }
 
 function showChallengeAccepted(habitName, days) {
-  const rewards = { 7: '🏆 Trophy', 14: '🏅 Badge', 21: '⭐ Star', 30: '💎 Diamond' }
-  const reward = rewards[days] || '🏆 Trophy'
+  const rewards = { 3: '🔥 Fire', 7: '🏆 Trophy', 14: '🏅 Badge', 21: '⭐ Star', 30: '💎 Diamond' }
+  const reward = rewards[days] || '🔥 Fire'
 
   const popup = document.createElement('div')
   popup.className = 'fixed inset-0 bg-black/50 z-50 flex items-center justify-center'
@@ -456,10 +527,13 @@ function showChallengeAccepted(habitName, days) {
 
 function showMilestoneReward(streak, habitName) {
   const rewards = {
-    7:  { emoji: '🏆', name: 'Trophy',  msg: 'You have been consistent for 7 days!' },
-    14: { emoji: '🏅', name: 'Badge',   msg: 'Two weeks of consistency. You are a habit builder!' },
-    21: { emoji: '⭐', name: 'Star',    msg: '21 days! Science says this is now a real habit!' },
-    30: { emoji: '💎', name: 'Diamond', msg: '30 days! You are absolutely unstoppable!' }
+    3:  { emoji: '🔥', name: 'Fire',    msg: "3 days in! You're building momentum. Keep going! 💪" },
+    7:  { emoji: '🏆', name: 'Trophy',  msg: 'One full week! You\'re officially consistent. 🌟' },
+    14: { emoji: '🏅', name: 'Badge',   msg: 'Two weeks strong! Halfway to a habit. 🔥' },
+    21: { emoji: '⭐', name: 'Star',    msg: '21 days — science says this is now a habit! 🧠' },
+    30: { emoji: '💎', name: 'Diamond', msg: '30-day streak! You\'re on fire! 🏆' },
+    60: { emoji: '⚡', name: 'Thunder',  msg: '60 days! You are absolutely unstoppable! ⚡' },
+    100: { emoji: '🏅', name: 'Legend', msg: '100 DAYS! You are a Goal Vault legend! 🏅' }
   }
 
   const reward = rewards[streak]
@@ -484,6 +558,106 @@ function showMilestoneReward(streak, habitName) {
   document.getElementById('reward-ok-btn')?.addEventListener('click', () => {
     document.body.removeChild(popup)
   })
+}
+
+function initWeeklyChart() {
+  const today = new Date()
+  const chartBars = document.querySelectorAll('#weekly-chart [data-day-index]')
+  
+  chartBars.forEach((bar, dayIndex) => {
+    const date = new Date(today)
+    date.setDate(today.getDate() - (6 - dayIndex))
+    
+    const completedCount = allHabits.filter(h => {
+      if (!h.lastCompletedDates) return false
+      const lastCompleted = new Date(h.lastCompletedDates)
+      lastCompleted.setHours(0, 0, 0, 0)
+      const checkDate = new Date(date)
+      checkDate.setHours(0, 0, 0, 0)
+      return lastCompleted.getTime() === checkDate.getTime()
+    }).length
+    
+    const pct = allHabits.length === 0 ? 0 : Math.round((completedCount / allHabits.length) * 100)
+    bar.style.height = Math.max(20, (pct / 100) * 120) + 'px'
+    bar.style.opacity = pct > 0 ? '1' : '0.3'
+  })
+  
+  updateCalendar()
+  updateStats()
+}
+
+let currentCalendarDate = new Date()
+
+function updateCalendar() {
+  const month = currentCalendarDate.getMonth()
+  const year = currentCalendarDate.getFullYear()
+  const today = new Date()
+  
+  document.getElementById('cal-month').textContent = currentCalendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
+  
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  
+  let html = document.querySelectorAll('#cal-grid div:first-child').length === 7 
+    ? Array.from(document.querySelectorAll('#cal-grid div')).slice(0, 7).map(el => el.outerHTML).join('')
+    : ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => `<div class="text-[10px] font-bold text-on-surface-variant text-center py-1">${day}</div>`).join('')
+  
+  for (let i = 0; i < firstDay; i++) html += '<div></div>'
+  
+  for (let day = 1; day <= daysInMonth; day++) {
+    const checkDate = new Date(year, month, day)
+    checkDate.setHours(0, 0, 0, 0)
+    const todayCheck = new Date(today)
+    todayCheck.setHours(0, 0, 0, 0)
+    const isToday = checkDate.getTime() === todayCheck.getTime()
+    
+    const completedToday = allHabits.filter(h => {
+      if (!h.lastCompletedDates) return false
+      const last = new Date(h.lastCompletedDates)
+      last.setHours(0, 0, 0, 0)
+      return last.getTime() === checkDate.getTime()
+    }).length
+    const allCompleted = completedToday === allHabits.length && allHabits.length > 0
+    
+    html += `<div class="p-1 rounded text-[11px] font-bold text-center ${ 
+      isToday ? 'bg-tertiary text-white' : 
+      allCompleted ? 'bg-tertiary-container/50 text-tertiary' : 
+      'text-on-surface'
+    }">${day}</div>`
+  }
+  
+  document.getElementById('cal-grid').innerHTML = html
+}
+
+function updateStats() {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  const completedToday = allHabits.filter(h => {
+    if (!h.lastCompletedDates) return false
+    const last = new Date(h.lastCompletedDates)
+    last.setHours(0, 0, 0, 0)
+    return last.getTime() === today.getTime()
+  }).length
+  
+  let completedWeek = 0
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(today)
+    date.setDate(today.getDate() - i)
+    const count = allHabits.filter(h => {
+      if (!h.lastCompletedDates) return false
+      const last = new Date(h.lastCompletedDates)
+      last.setHours(0, 0, 0, 0)
+      return last.getTime() === date.getTime()
+    }).length
+    if (count === allHabits.length && allHabits.length > 0) completedWeek++
+  }
+  
+  const completionRate = allHabits.length === 0 ? 0 : Math.round((completedToday / allHabits.length) * 100)
+  
+  document.getElementById('stat-today').textContent = completedToday
+  document.getElementById('stat-week').textContent = completedWeek
+  document.getElementById('stat-rate').textContent = completionRate + '%'
 }
 
 init()

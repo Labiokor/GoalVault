@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goal Vault – Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header>
+        <div class="brand-top-left">
+            <h1>GOAL VAULT</h1>
+            <p>Plan.Focus.Achieve</p>
+        </div>
+    </header>
+
+    <div class="user-top-right">
+        <button id="darkModeBtn" title="Toggle dark mode"></button>
+        <div id="streakMenu">
+            <span class="streak-icon">🔥</span>
+            <span class="streak-count">0</span>
+            <span class="streak-tooltip">Current streak: 0 days</span>
+        </div>
+    </div>
+
+    <nav class="nav_bottom">
+    <div class="nav-item">
+        <a href="index.html">
+            <i class="fa-solid fa-chart-line"></i>Dashboard
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="planner.html">
+            <i class="fa-solid fa-calendar-check"></i>Goals
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="habits.html">
+            <i class="fa-solid fa-check"></i>Habits
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="notebook.html">
+            <i class="fas fa-sticky-note"></i>Notebook
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="tasks.html">
+            <i class="fa-solid fa-list-check"></i>Tasks
+        </a>
+    </div>
+    <div class="nav-item" style="position:relative;">
+        <a href="notifications.html" style="position:relative;">
+            <i class="fa-solid fa-bell"></i>
+            <span class="notif-nav-badge" id="notifNavBadge"></span>
+            Alerts
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="reminders.html">
+            <i class="fa-solid fa-clock-rotate-left"></i>Reminders
+        </a>
+    </div>
+    <div class="nav-item">
+        <a href="account.html">
+            <i class="fa-solid fa-user"></i>My Account
+        </a>
+    </div>
+</nav>
+
+    <div id="dashboardSection" class="section">
+
+        <!-- Greeting -->
+        <div class="dash-greeting">
+            <p class="eyebrow">Good day</p>
+            <h2>Welcome back, <span id="usernameDisplay">User</span> 👋</h2>
+            <p class="sub" id="dashDate"></p>
+        </div>
+
+        <!-- Streak Hero -->
+        <div class="streak-hero" id="streakHero">
+            <div class="streak-flame">🔥</div>
+
+            <div class="streak-text">
+                <div class="streak-num" id="heroStreakNum">0</div>
+                <div class="streak-label">Day Winning Streak</div>
+                <div class="streak-badge" id="heroStreakBadge">KEEP GOING</div>
+            </div>
+
+            <!-- Ring progress to next milestone -->
+            <div class="streak-progress-wrap">
+                <div class="streak-progress-label">Next Milestone</div>
+                <div class="streak-ring-wrap">
+                    <svg width="76" height="76" viewBox="0 0 76 76">
+                        <circle class="ring-bg"   cx="38" cy="38" r="30"/>
+                        <circle class="ring-fill" cx="38" cy="38" r="30"
+                            id="ringFill"
+                            stroke-dasharray="188.5"
+                            stroke-dashoffset="188.5"/>
+                    </svg>
+                    <div class="ring-inner-text">
+                        <div class="ring-pct" id="ringPct">0%</div>
+                        <div class="ring-sub">to goal</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 21-dot progress grid -->
+            <div class="streak-dots-wrap">
+                <div class="streak-dots-label">This Month</div>
+                <div class="streak-dots-grid" id="streakDotsGrid"></div>
+            </div>
+        </div>
+
+                <!-- 4 Stat Cards (2x2 Grid) -->
+        <div class="stat-row">
+            <div class="stat-card" onclick="window.location.href='tasks.html'" style="cursor:pointer;">
+                <div class="stat-icon-wrap tasks">
+                    <i class="fa-solid fa-list-check"></i>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Tasks</div>
+                    <div class="stat-value" id="dashTasksNum">0</div>
+                    <div class="stat-sub">remaining today</div>
+                </div>
+                <div class="stat-trend neu" id="taskTrend">—</div>
+            </div>
+
+            <div class="stat-card" onclick="window.location.href='habits.html'" style="cursor:pointer;">
+                <div class="stat-icon-wrap habits">
+                    <i class="fa-solid fa-seedling"></i>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Habits</div>
+                    <div class="stat-value" id="dashHabitsNum">0%</div>
+                    <div class="stat-sub">completed today</div>
+                </div>
+                <div class="stat-trend neu" id="habitTrend">—</div>
+            </div>
+
+            <div class="stat-card" onclick="window.location.href='planner.html'" style="cursor:pointer;">
+                <div class="stat-icon-wrap reminders">
+                    <i class="fa-solid fa-bell"></i>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Reminders</div>
+                    <div class="stat-value" id="dashRemindersNum">0</div>
+                    <div class="stat-sub" id="dashRemindersSub">no active reminders</div>
+                </div>
+                <div class="stat-trend neu" id="reminderTrend">—</div>
+            </div>
+
+            <div class="stat-card" onclick="window.location.href='notebook.html'" style="cursor:pointer;">
+                <div class="stat-icon-wrap notes">
+                    <i class="fa-solid fa-note-sticky"></i>
+                </div>
+                <div class="stat-info">
+                    <div class="stat-label">Notes</div>
+                    <div class="stat-value" id="dashNotesNum">0</div>
+                    <div class="stat-sub">saved in notebook</div>
+                </div>
+                <div class="stat-trend neu" id="notesTrend">—</div>
+            </div>
+        </div>
+
+        <!-- Overall Progress Bar -->
+        <div class="progress-card">
+            <div class="progress-card-header">
+                <div class="progress-card-title">Today's Overall Progress</div>
+                <div class="progress-card-count" id="globalProgressText">0 / 0 done</div>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" id="globalProgressFill"></div>
+            </div>
+            <div class="progress-legend">
+                <div class="prog-legend-item">
+                    <div class="prog-dot orange"></div>
+                    Completed
+                </div>
+                <div class="prog-legend-item">
+                    <div class="prog-dot grey"></div>
+                    Remaining
+                </div>
+            </div>
+        </div>
+
+    </div>
+        <!-- ── Confirm Delete Modal ── -->
+<div id="confirmModal" style="display:none;">
+    <div class="confirm-backdrop"></div>
+    <div class="confirm-box">
+        <div class="confirm-icon">🗑️</div>
+        <h3 class="confirm-title">Are you sure?</h3>
+        <p class="confirm-msg" id="confirmMsg">
+            This action cannot be undone.
+        </p>
+        <div class="confirm-actions">
+            <button class="confirm-cancel" id="confirmCancel">
+                Cancel
+            </button>
+            <button class="confirm-delete" id="confirmDelete">
+                Delete
+            </button>
+        </div>
+    </div>
+</div>
+
+    <script src="app.js"></script>
+</body>
+</html>

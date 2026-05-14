@@ -405,7 +405,285 @@ h1, h2, h3, h4, h5, h6, .font-headline {
   overflow-y: auto;
 }
 
-/* ─── MOBILE RESPONSIVE ──────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════
+   DASHBOARD MERGED CSS
+══════════════════════════════════════════════════ */
+
+/* ── Her streak hero ───────────────────────────── */
+.streak-hero {
+  position: relative;
+  border-radius: 22px;
+  background: linear-gradient(130deg, #ff6b35 0%, #ff9f43 55%, #ffcc70 100%);
+  padding: 28px 32px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  box-shadow: 0 12px 40px rgba(255,107,53,0.25);
+  flex-wrap: wrap;
+}
+.streak-hero::before {
+  content: '';
+  position: absolute;
+  width: 260px; height: 260px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.08);
+  top: -80px; right: -60px;
+  pointer-events: none;
+}
+.streak-flame {
+  font-size: 3.2rem; line-height: 1;
+  filter: drop-shadow(0 4px 12px rgba(0,0,0,0.18));
+  animation: dash-flicker 2.5s ease-in-out infinite;
+  flex-shrink: 0; z-index: 1;
+}
+@keyframes dash-flicker {
+  0%,100% { transform: scale(1) rotate(-2deg); }
+  30%      { transform: scale(1.06) rotate(2deg); }
+  60%      { transform: scale(0.97) rotate(-1deg); }
+}
+.streak-text { z-index: 1; flex: 1; min-width: 120px; }
+.streak-text .streak-num {
+  font-family: 'Manrope', sans-serif;
+  font-size: 3rem; font-weight: 800;
+  color: #fff; line-height: 1; letter-spacing: -2px;
+}
+.streak-text .streak-label {
+  font-size: 0.85rem; color: rgba(255,255,255,0.8);
+  margin-top: 5px; font-weight: 500;
+}
+.streak-text .streak-badge {
+  display: inline-block; margin-top: 10px;
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.3);
+  color: #fff; font-size: 0.62rem; font-weight: 700;
+  letter-spacing: 2px; text-transform: uppercase;
+  padding: 5px 12px; border-radius: 99px;
+}
+.streak-dots-wrap {
+  display: flex; flex-direction: column;
+  align-items: flex-end; gap: 8px; z-index: 1; flex-shrink: 0;
+}
+.streak-dots-label {
+  font-size: 0.55rem; letter-spacing: 2px;
+  text-transform: uppercase; color: rgba(255,255,255,0.6); font-weight: 500;
+}
+.streak-dots-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+}
+.s-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: rgba(255,255,255,0.22);
+  transition: background 0.3s, transform 0.3s;
+}
+.s-dot.lit { background: #fff; box-shadow: 0 0 5px rgba(255,255,255,0.5); }
+.streak-progress-wrap {
+  z-index: 1; display: flex; flex-direction: column;
+  align-items: center; gap: 5px; flex-shrink: 0;
+}
+.streak-progress-label {
+  font-size: 0.55rem; letter-spacing: 2px;
+  color: rgba(255,255,255,0.6); text-transform: uppercase; font-weight: 500;
+}
+.streak-ring-wrap { position: relative; width: 68px; height: 68px; }
+.streak-ring-wrap svg { transform: rotate(-90deg); }
+.ring-bg   { fill: none; stroke: rgba(255,255,255,0.18); stroke-width: 5; }
+.ring-fill {
+  fill: none; stroke: #fff; stroke-width: 5; stroke-linecap: round;
+  transition: stroke-dashoffset 1s cubic-bezier(.4,0,.2,1);
+}
+.ring-inner-text {
+  position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%,-50%); text-align: center;
+}
+.ring-pct {
+  font-family: 'Manrope', sans-serif;
+  font-size: 1rem; font-weight: 800; color: #fff; line-height: 1;
+}
+.ring-sub {
+  font-size: 0.48rem; color: rgba(255,255,255,0.65);
+  letter-spacing: 1px; text-transform: uppercase;
+}
+
+/* ── Her stat cards ──────────────────────────── */
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+.stat-card {
+  background: white;
+  border: 1px solid #e4e9f2;
+  border-radius: 18px;
+  padding: 18px 20px;
+  display: flex; align-items: center; gap: 14px;
+  box-shadow: 0 1px 4px rgba(17,24,39,0.06);
+  cursor: pointer; min-width: 0;
+  transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+}
+.stat-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 4px 16px rgba(17,24,39,0.08);
+  border-color: #4f8ef7;
+}
+.stat-icon-wrap {
+  width: 42px; height: 42px; border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1rem; flex-shrink: 0;
+}
+.stat-icon-wrap.tasks     { background: #e8f2ff; color: #2f7cdc; }
+.stat-icon-wrap.habits    { background: #e6faf3; color: #1bac77; }
+.stat-icon-wrap.reminders { background: #fff4e8; color: #e07918; }
+.stat-icon-wrap.notes     { background: #f3e8ff; color: #9333ea; }
+.stat-info { flex: 1; min-width: 0; }
+.stat-label {
+  font-size: 0.6rem; letter-spacing: 1.5px; text-transform: uppercase;
+  color: #9aa5b8; margin-bottom: 4px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stat-value {
+  font-family: 'Manrope', sans-serif;
+  font-size: 1.4rem; font-weight: 700; color: #111827; line-height: 1.1;
+}
+.stat-sub {
+  font-size: 0.72rem; color: #9aa5b8; margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.stat-trend {
+  font-size: 0.68rem; font-weight: 600; padding: 3px 8px;
+  border-radius: 99px; flex-shrink: 0; white-space: nowrap;
+}
+.stat-trend.up   { background: #e6faf3; color: #1bac77; }
+.stat-trend.warn { background: #fff4e8; color: #e07918; }
+.stat-trend.neu  { background: #f7f9fc; color: #9aa5b8; }
+
+/* ── Her progress card ───────────────────────── */
+.progress-card {
+  background: white; border: 1px solid #e4e9f2;
+  border-radius: 18px; padding: 20px 24px;
+  box-shadow: 0 1px 4px rgba(17,24,39,0.06);
+}
+.progress-card-header {
+  display: flex; align-items: center;
+  justify-content: space-between; margin-bottom: 14px; gap: 12px; flex-wrap: wrap;
+}
+.progress-card-title {
+  font-family: 'Manrope', sans-serif; font-size: 0.95rem;
+  font-weight: 600; color: #111827;
+}
+.progress-card-count {
+  font-size: 0.74rem; color: #9aa5b8;
+  background: #f7f9fc; border: 1px solid #e4e9f2;
+  padding: 3px 11px; border-radius: 99px; white-space: nowrap;
+}
+.progress-track {
+  width: 100%; height: 7px; background: #f7f9fc;
+  border-radius: 99px; overflow: hidden;
+}
+.progress-fill {
+  height: 100%; width: 0;
+  background: linear-gradient(90deg, #ff6b35, #ff9f43);
+  border-radius: 99px; transition: width .8s cubic-bezier(.4,0,.2,1);
+}
+.progress-legend { display: flex; gap: 16px; margin-top: 10px; flex-wrap: wrap; }
+.prog-legend-item { display: flex; align-items: center; gap: 6px; font-size: 0.74rem; color: #9aa5b8; }
+.prog-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.prog-dot.orange { background: #ff6b35; }
+.prog-dot.grey   { background: #e4e9f2; }
+
+/* ── Dashboard layout ────────────────────────── */
+.dash-root { display: flex; flex-direction: column; gap: 1.5rem; max-width: 900px; }
+.dash-motivational {  }
+.dash-hero-stats { display: flex; gap: 1.5rem; shrink: 0; }
+
+.dash-bottom-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 1.5rem;
+}
+
+/* ── Dark mode ───────────────────────────────── */
+.dark .streak-hero { box-shadow: 0 12px 40px rgba(255,107,53,0.15); }
+.dark .stat-card { background: #1e2130; border-color: rgba(255,255,255,0.05); }
+.dark .stat-value { color: #e2e8f0; }
+.dark .stat-label { color: #64748b; }
+.dark .stat-sub   { color: #64748b; }
+.dark .stat-trend.up   { background: #0c2218; color: #3ec88a; }
+.dark .stat-trend.warn { background: #21180e; color: #e07918; }
+.dark .stat-trend.neu  { background: #252836; color: #64748b; }
+.dark .stat-icon-wrap.tasks     { background: #0e1f35; color: #5b9bd5; }
+.dark .stat-icon-wrap.habits    { background: #0c2218; color: #3ec88a; }
+.dark .stat-icon-wrap.reminders { background: #21180e; color: #e07918; }
+.dark .stat-icon-wrap.notes     { background: #2d1b3d; color: #c084fc; }
+.dark .progress-card { background: #1e2130; border-color: rgba(255,255,255,0.05); }
+.dark .progress-card-title { color: #e2e8f0; }
+.dark .progress-card-count { background: #252836; border-color: rgba(255,255,255,0.05); color: #64748b; }
+.dark .progress-track { background: #252836; }
+
+/* ══════════════════════════════════════════════════
+   HER TABLET (≤ 900px) — dashboard responsive
+══════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .streak-dots-wrap,
+  .streak-progress-wrap { display: none; }
+
+  .streak-text .streak-num { font-size: 2.4rem; }
+
+  /* 3 stat cards across on tablet */
+  .stat-row { grid-template-columns: repeat(3, 1fr); }
+
+  /* Bottom grid stacks to 2 col on tablet */
+  .dash-bottom-grid { grid-template-columns: 1fr 1fr; }
+  .dash-actions-col { grid-column: 1 / -1; }
+
+  .progress-card-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+/* ══════════════════════════════════════════════════
+   MOBILE (≤ 640px) — dashboard responsive
+══════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  .dash-root { gap: 1rem; }
+
+  /* Motivational hero */
+  .dash-motivational { padding: 1.25rem 1rem; border-radius: 1rem; }
+  .dash-hero-stats { gap: 1rem; }
+
+  /* Streak hero */
+  .streak-hero {
+    padding: 20px 18px;
+    gap: 14px;
+    border-radius: 16px;
+    flex-wrap: nowrap;
+  }
+  .streak-flame { font-size: 2.4rem; }
+  .streak-text .streak-num { font-size: 2rem; }
+  .streak-text .streak-label { font-size: 0.76rem; }
+  .streak-text .streak-badge { font-size: 0.58rem; padding: 4px 10px; margin-top: 8px; }
+  .streak-dots-wrap,
+  .streak-progress-wrap { display: none; }
+
+  /* 1 col stat cards on mobile */
+  .stat-row { grid-template-columns: 1fr; gap: 8px; }
+  .stat-card { padding: 14px 16px; gap: 12px; }
+  .stat-value { font-size: 1.2rem; }
+  .stat-trend { font-size: 0.64rem; }
+
+  /* Progress card */
+  .progress-card { padding: 16px 18px; }
+  .progress-card-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+
+  /* Bottom grid — single column on mobile */
+  .dash-bottom-grid {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .dash-actions-col { grid-column: auto; }
+
+  /* Hide hero stats on very small screens */
+  .dash-hero-stats { display: none; }
+}
+
 @media (max-width: 768px) {
   .sidebar {
     position: fixed;

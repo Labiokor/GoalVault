@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Goal Vault – Reminders</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <header>
+        <div class="brand-top-left">
+            <h1>GOAL VAULT</h1>
+            <p><strong>Plan.Focus.Achieve</strong></p>
+        </div>
+    </header>
+
+    <div class="user-top-right">
+        <button id="darkModeBtn" title="Toggle dark mode"></button>
+        <div id="streakMenu" title="current streak">
+            <span class="streak-icon">🔥</span>
+            <span class="streak-count">0</span>
+            <span class="streak-tooltip">Current streak: 0 days</span>
+        </div>
+    </div>
+
+    <nav class="nav_bottom">
+        <div class="nav-item">
+            <a href="index.html"><i class="fa-solid fa-chart-line"></i>Dashboard</a>
+        </div>
+        <div class="nav-item">
+            <a href="planner.html"><i class="fa-solid fa-calendar-check"></i>Goals</a>
+        </div>
+        <div class="nav-item">
+            <a href="habits.html"><i class="fa-solid fa-check"></i>Habits</a>
+        </div>
+        <div class="nav-item">
+            <a href="notebook.html"><i class="fas fa-sticky-note"></i>Notebook</a>
+        </div>
+        <div class="nav-item">
+            <a href="tasks.html"><i class="fa-solid fa-list-check"></i>Tasks</a>
+        </div>
+        <div class="nav-item" style="position:relative;">
+            <a href="notifications.html" style="position:relative;">
+                <i class="fa-solid fa-bell"></i>
+                <span class="notif-nav-badge" id="notifNavBadge"></span>
+                Alerts
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="reminders.html">
+                <i class="fa-solid fa-clock-rotate-left"></i>Reminders
+            </a>
+        </div>
+        <div class="nav-item">
+            <a href="account.html"><i class="fa-solid fa-user"></i>My Account</a>
+        </div>
+    </nav>
+
+    <div id="remindersSection" class="section">
+
+        <!-- Page Header -->
+        <div class="rem-page-header">
+            <div class="rem-header-left">
+                <h2 class="rem-title">Stay on Schedule</h2>
+                <p class="rem-subtitle">Never miss a moment that matters.</p>
+            </div>
+            <button class="rem-add-btn" id="openReminderModal">
+                <i class="fa-solid fa-plus"></i> New Reminder
+            </button>
+        </div>
+
+        <!-- Stats Bar -->
+        <div class="rem-stats-bar">
+            <div class="rem-stat">
+                <div class="rem-stat-icon upcoming">
+                    <i class="fa-solid fa-clock"></i>
+                </div>
+                <div class="rem-stat-info">
+                    <div class="rem-stat-num" id="statUpcoming">0</div>
+                    <div class="rem-stat-label">Upcoming</div>
+                </div>
+            </div>
+            <div class="rem-stat-divider"></div>
+            <div class="rem-stat">
+                <div class="rem-stat-icon overdue">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                </div>
+                <div class="rem-stat-info">
+                    <div class="rem-stat-num overdue" id="statOverdue">0</div>
+                    <div class="rem-stat-label">Overdue</div>
+                </div>
+            </div>
+            <div class="rem-stat-divider"></div>
+            <div class="rem-stat">
+                <div class="rem-stat-icon completed">
+                    <i class="fa-solid fa-circle-check"></i>
+                </div>
+                <div class="rem-stat-info">
+                    <div class="rem-stat-num completed" id="statCompleted">0</div>
+                    <div class="rem-stat-label">Completed</div>
+                </div>
+            </div>
+            <div class="rem-stat-divider"></div>
+            <div class="rem-stat">
+                <div class="rem-stat-icon next">
+                    <i class="fa-solid fa-forward"></i>
+                </div>
+                <div class="rem-stat-info">
+                    <div class="rem-stat-num next" id="statNext">—</div>
+                    <div class="rem-stat-label">Next Up</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabs + Sort -->
+        <div class="rem-controls">
+            <div class="rem-tabs">
+                <button class="rem-tab active" data-tab="upcoming">
+                    <i class="fa-solid fa-clock"></i> Upcoming
+                    <span class="rem-tab-badge" id="tabBadgeUpcoming">0</span>
+                </button>
+                <button class="rem-tab" data-tab="overdue">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Overdue
+                    <span class="rem-tab-badge overdue" id="tabBadgeOverdue">0</span>
+                </button>
+                <button class="rem-tab" data-tab="completed">
+                    <i class="fa-solid fa-circle-check"></i> Completed
+                    <span class="rem-tab-badge completed" id="tabBadgeCompleted">0</span>
+                </button>
+            </div>
+            <div class="rem-sort-wrap">
+                <label class="rem-sort-label">Sort:</label>
+                <select class="rem-sort-select" id="remSortSelect">
+                    <option value="soonest">Soonest First</option>
+                    <option value="oldest">Oldest First</option>
+                    <option value="alpha">A → Z</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Reminder List -->
+        <div class="rem-list" id="remList"></div>
+
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         CREATE / EDIT REMINDER MODAL
+    ══════════════════════════════════════════ -->
+    <div class="goal-modal-overlay" id="reminderModalOverlay">
+        <div class="goal-modal" style="max-width:500px;">
+            <div class="goal-modal-header">
+                <h3 class="goal-modal-title" id="reminderModalTitle">
+                    <i class="fa-solid fa-bell" style="color:#7c3aed;margin-right:8px;"></i>
+                    New Reminder
+                </h3>
+                <button class="goal-modal-close" id="closeReminderModal">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="goal-modal-body">
+
+                <!-- Label -->
+                <div class="goal-field">
+                    <label class="goal-field-label">REMINDER TITLE</label>
+                    <input type="text" class="goal-field-input" id="remLabelInput"
+                        placeholder="e.g. Take medication, Team meeting..." autocomplete="off">
+                    <span class="goal-field-error" id="remLabelError">Please enter a title.</span>
+                </div>
+
+                <!-- Note -->
+                <div class="goal-field">
+                    <label class="goal-field-label">NOTE (OPTIONAL)</label>
+                    <textarea class="goal-field-input goal-field-textarea"
+                        id="remNoteInput" rows="2"
+                        placeholder="Add extra details..."></textarea>
+                </div>
+
+                <!-- Category -->
+                <div class="goal-field">
+                    <label class="goal-field-label">CATEGORY</label>
+                    <div class="rem-category-picker" id="remCategoryPicker">
+                        <button class="rem-cat-btn active-cat" data-cat="personal">
+                            <span>🙂</span> Personal
+                        </button>
+                        <button class="rem-cat-btn" data-cat="work">
+                            <span>💼</span> Work
+                        </button>
+                        <button class="rem-cat-btn" data-cat="health">
+                            <span>💪</span> Health
+                        </button>
+                        <button class="rem-cat-btn" data-cat="finance">
+                            <span>💰</span> Finance
+                        </button>
+                        <button class="rem-cat-btn" data-cat="goal">
+                            <span>🎯</span> Goal
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Date & Time -->
+                <div class="goal-field-row">
+                    <div class="goal-field">
+                        <label class="goal-field-label">DATE</label>
+                        <input type="date" class="goal-field-input" id="remDateInput">
+                    </div>
+                    <div class="goal-field">
+                        <label class="goal-field-label">TIME</label>
+                        <input type="time" class="goal-field-input" id="remTimeInput">
+                    </div>
+                </div>
+                <span class="goal-field-error" id="remDateTimeError">
+                    Please select a valid future date and time.
+                </span>
+
+                <!-- Frequency -->
+                <div class="goal-field">
+                    <label class="goal-field-label">REPEAT</label>
+                    <div class="goal-freq-picker" id="remFreqPicker">
+                        <button class="goal-freq-btn active-freq" data-freq="once">Once</button>
+                        <button class="goal-freq-btn" data-freq="daily">Daily</button>
+                        <button class="goal-freq-btn" data-freq="weekly">Weekly</button>
+                        <button class="goal-freq-btn" data-freq="monthly">Monthly</button>
+                    </div>
+                </div>
+
+                <!-- Color accent -->
+                <div class="goal-field">
+                    <label class="goal-field-label">COLOR</label>
+                    <div class="rem-color-picker" id="remColorPicker">
+                        <button class="rem-color-btn active-color" data-color="#7c3aed" style="background:#7c3aed;"></button>
+                        <button class="rem-color-btn" data-color="#ef4444" style="background:#ef4444;"></button>
+                        <button class="rem-color-btn" data-color="#f59e0b" style="background:#f59e0b;"></button>
+                        <button class="rem-color-btn" data-color="#10b981" style="background:#10b981;"></button>
+                        <button class="rem-color-btn" data-color="#3b82f6" style="background:#3b82f6;"></button>
+                    </div>
+                </div>
+
+                <!-- Live preview -->
+                <div class="rem-modal-preview" id="remModalPreview">
+                    <i class="fa-solid fa-bell" id="remPreviewIcon"></i>
+                    <span id="remPreviewText">Select a date and time to preview</span>
+                </div>
+
+            </div>
+            <div class="goal-modal-footer">
+                <button class="goal-create-btn" id="saveReminderBtn">
+                    <i class="fa-solid fa-bell"></i> Set Reminder
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Snooze Modal -->
+    <div class="goal-modal-overlay" id="snoozeModalOverlay">
+        <div class="goal-modal" style="max-width:380px;">
+            <div class="goal-modal-header">
+                <h3 class="goal-modal-title">
+                    <i class="fa-solid fa-clock" style="color:#f59e0b;margin-right:8px;"></i>
+                    Snooze Reminder
+                </h3>
+                <button class="goal-modal-close" id="closeSnoozeModal">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="goal-modal-body">
+                <p style="font-family:'Inter',sans-serif;font-size:0.88rem;
+                    color:var(--text-sub);margin:0 0 16px;">
+                    How long would you like to snooze
+                    <strong id="snoozeReminderName">this reminder</strong>?
+                </p>
+                <div class="rem-snooze-options">
+                    <button class="rem-snooze-btn" data-snooze="60">
+                        <i class="fa-solid fa-clock"></i>
+                        <span>1 Hour</span>
+                    </button>
+                    <button class="rem-snooze-btn" data-snooze="180">
+                        <i class="fa-solid fa-clock"></i>
+                        <span>3 Hours</span>
+                    </button>
+                    <button class="rem-snooze-btn" data-snooze="480">
+                        <i class="fa-solid fa-clock"></i>
+                        <span>8 Hours</span>
+                    </button>
+                    <button class="rem-snooze-btn" data-snooze="1440">
+                        <i class="fa-solid fa-rotate-right"></i>
+                        <span>Tomorrow</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confirm Delete Modal -->
+    <div id="confirmModal" style="display:none;">
+        <div class="confirm-backdrop"></div>
+        <div class="confirm-box">
+            <div class="confirm-icon">🗑️</div>
+            <h3 class="confirm-title">Are you sure?</h3>
+            <p class="confirm-msg" id="confirmMsg">This action cannot be undone.</p>
+            <div class="confirm-actions">
+                <button class="confirm-cancel" id="confirmCancel">Cancel</button>
+                <button class="confirm-delete" id="confirmDelete">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

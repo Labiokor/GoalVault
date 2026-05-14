@@ -41,9 +41,13 @@ if (!gv_token && !window.location.pathname.includes('login.html')) {
                 const display = document.getElementById('usernameDisplay');
                 if (display) display.textContent = userName;
             }
+            updateNotifBadge();
         })
         .catch(() => {}); // 401 handles redirect automatically
 }
+
+let unreadCount = 0;
+let notificationsData = [];
 
 // ============================================================
 // NOTIFICATION ENGINE
@@ -59,49 +63,47 @@ const NOTIF_TYPES = {
     goal:     { icon: '🎯', label: 'Goal'     },
 };
 
-function getNotifications() {
-    return JSON.parse(localStorage.getItem('appNotifications') || '[]');
-}
-function saveNotifications(notifs) {
-    localStorage.setItem('appNotifications', JSON.stringify(notifs));
-}
-function pushNotification(type, title, body) {
-    const notifs = getNotifications();
-    const notif  = {
-        id:   Date.now() + Math.random(),
-        type, title, body,
-        date: new Date().toISOString(),
-        read: false,
-    };
-    const recent = notifs.find(n =>
-        n.type === type && n.title === title &&
-        (Date.now() - new Date(n.date).getTime()) < 3000
-    );
-    if (recent) return;
-    notifs.unshift(notif);
-    if (notifs.length > 100) notifs.splice(100);
-    saveNotifications(notifs);
-    updateNotifBadge();
-}
-function markAllNotifsRead() {
-    const notifs = getNotifications().map(n => ({ ...n, read: true }));
-    saveNotifications(notifs);
-    updateNotifBadge();
-}
-function updateNotifBadge() {
-    const unread = getNotifications().filter(n => !n.read).length;
-    const badge  = document.getElementById('notifNavBadge');
-    if (badge) badge.classList.toggle('visible', unread > 0);
-}
-function formatNotifTime(dateStr) {
-    const now  = new Date();
-    const then = new Date(dateStr);
+function getRelativeTime(dateString) {
+    const now = new Date();
+    const then = new Date(dateString);
+    if (isNaN(then)) return '';
     const diff = Math.round((now - then) / 1000);
-    if (diff < 60)        return 'Just now';
-    if (diff < 3600)      return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400)     return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
+    
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (then.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    
     return then.toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function pushNotification(type, title, body) {
+    // Frontend-only visual feedback via toast
+    const icon = NOTIF_TYPES[type]?.icon || '🔔';
+    showToast(`${icon} ${title}: ${body}`, 'info');
+}
+
+async function updateNotifBadge() {
+    try {
+        const res = await apiFetch('/api/notification/unread');
+        const unreadNotifs = res.data || [];
+        unreadCount = unreadNotifs.length;
+        
+        const badge = document.getElementById('notifNavBadge');
+        if (badge) {
+            if (unreadCount > 0) {
+                badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+                badge.classList.add('visible');
+            } else {
+                badge.classList.remove('visible');
+            }
+        }
+    } catch (err) {
+        console.error('Failed to update notif badge:', err);
+    }
 }
 function notifGroupLabel(dateStr) {
     const now     = new Date();
@@ -2927,85 +2929,175 @@ if (page === 'account') {
     }
 }
 
+
+
 // ============================================================
 // NOTIFICATIONS PAGE
 // ============================================================
 if (page === 'notifications') {
     let activeFilter = 'all';
 
+    async function fetchNotifications() {
+        try {
+            const res = await apiFetch('/api/notification');
+            notificationsData = (res.data || []).map(n => ({ ...n, id: n._id }));
+            renderNotifications();
+        } catch (err) {
+            console.error('Failed to load notifications:', err);
+            showToast('Failed to load notifications', 'error');
+        }
+    }
+
     function renderNotifications() {
         const notifList = document.getElementById('notifList');
         if (!notifList) return;
 
-        const allNotifs = getNotifications();
-        const filtered  = activeFilter === 'all' ? allNotifs : allNotifs.filter(n => n.type === activeFilter);
+        // Filter
+        let filtered = activeFilter === 'all' 
+            ? notificationsData 
+            : notificationsData.filter(n => n.type === activeFilter);
 
+        // Sort: Unread first, then date descending
+        filtered.sort((a, b) => {
+            if (a.read !== b.read) return a.read ? 1 : -1;
+            return new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date);
+        });
+
+        // Update counts
         const countLabel = document.getElementById('notifCountLabel');
         if (countLabel) countLabel.textContent = `${filtered.length} notification${filtered.length === 1 ? '' : 's'}`;
 
-        const unread       = allNotifs.filter(n => !n.read).length;
+        const currentUnread = notificationsData.filter(n => !n.read).length;
         const unreadBanner = document.getElementById('notifUnreadBanner');
-        const unreadText   = document.getElementById('notifUnreadText');
+        const unreadText = document.getElementById('notifUnreadText');
         if (unreadBanner) {
-            unreadBanner.style.display = unread > 0 ? 'flex' : 'none';
-            if (unreadText) unreadText.textContent = unread === 1 ? '1 unread notification' : `${unread} unread notifications`;
+            unreadBanner.style.display = currentUnread > 0 ? 'flex' : 'none';
+            if (unreadText) unreadText.textContent = currentUnread === 1 ? '1 unread notification' : `${currentUnread} unread notifications`;
         }
 
+        // Disable/hide "Mark all read" if no unread
+        const markAllBtn = document.getElementById('markAllReadBtn');
+        if (markAllBtn) markAllBtn.disabled = currentUnread === 0;
+
         if (filtered.length === 0) {
-            notifList.innerHTML = '';
-            notifList.style.border = 'none';
-            notifList.style.background = 'transparent';
             notifList.innerHTML = `
-<div class="notif-empty">
-  <div class="notif-empty-icon">🔔</div>
-  <div class="notif-empty-title">All caught up!</div>
-  <div class="notif-empty-sub">
-    ${activeFilter === 'all'
-        ? 'No notifications yet. Start adding tasks, habits, and goals!'
-        : `No ${activeFilter} notifications yet.`}
-  </div>
-</div>`;
+                <div class="notif-empty">
+                    <div class="notif-empty-icon">🔔</div>
+                    <div class="notif-empty-title">All caught up!</div>
+                    <div class="notif-empty-sub">
+                        ${activeFilter === 'all'
+                            ? 'No notifications yet. Start adding tasks, habits, and goals!'
+                            : `No ${activeFilter} notifications yet.`}
+                    </div>
+                </div>`;
             return;
         }
 
-        notifList.style.border     = '';
-        notifList.style.background = '';
-
         let html = '', lastGroup = null;
         filtered.forEach(n => {
-            const group = notifGroupLabel(n.date);
-            if (group !== lastGroup) { html += `<div class="notif-group-label">${group}</div>`; lastGroup = group; }
+            const date = n.createdAt || n.date;
+            const group = notifGroupLabel(date);
+            if (group !== lastGroup) {
+                html += `<div class="notif-group-label">${group}</div>`;
+                lastGroup = group;
+            }
             const typeConfig = NOTIF_TYPES[n.type] || NOTIF_TYPES.system;
             html += `
-<div class="notif-item${n.read ? '' : ' unread'}" data-id="${n.id}">
-  <div class="notif-icon-bubble ${n.type}">${typeConfig.icon}</div>
-  <div class="notif-content">
-    <div class="notif-title">${n.title}</div>
-    <div class="notif-body">${n.body}</div>
-    <div class="notif-time">${formatNotifTime(n.date)}</div>
-  </div>
-  <div class="notif-right">
-    <span class="notif-type-badge ${n.type}">${typeConfig.label}</span>
-    <button class="notif-dismiss-btn" data-dismiss="${n.id}" title="Dismiss">✕</button>
-  </div>
-</div>`;
+                <div class="notif-item${n.read ? '' : ' unread'}" 
+                     data-id="${n.id}" 
+                     data-reference-id="${n.reference?.documentId || ''}" 
+                     data-reference-type="${n.reference?.model || ''}">
+                    <div class="notif-icon-bubble ${n.type}">${typeConfig.icon}</div>
+                    <div class="notif-content">
+                        <div class="notif-title">${n.title}</div>
+                        <div class="notif-body">${n.message || n.body}</div>
+                        <div class="notif-time">${getRelativeTime(date)}</div>
+                    </div>
+                    <div class="notif-right">
+                        <span class="notif-type-badge ${n.type}">${typeConfig.label}</span>
+                        ${!n.read ? `<button class="notif-read-btn" data-read="${n.id}" title="Mark as read"><i class="fa-solid fa-check"></i></button>` : ''}
+                        <button class="notif-dismiss-btn" data-dismiss="${n.id}" title="Delete">✕</button>
+                    </div>
+                </div>`;
         });
 
         notifList.innerHTML = html;
 
-        const updated = getNotifications().map(n => ({ ...n, read: true }));
-        saveNotifications(updated);
-        updateNotifBadge();
-
-        notifList.querySelectorAll('[data-dismiss]').forEach(btn => {
-            btn.addEventListener('click', function (e) {
+        // Event Listeners
+        notifList.querySelectorAll('[data-read]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                const id      = +this.dataset.dismiss;
-                const updated = getNotifications().filter(n => n.id !== id);
-                saveNotifications(updated);
-                renderNotifications();
+                const id = btn.dataset.read;
+                await markAsRead(id);
             });
         });
+
+        notifList.querySelectorAll('[data-dismiss]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.dismiss;
+                await deleteNotification(id);
+            });
+        });
+    }
+
+    async function markAsRead(id) {
+        try {
+            await apiFetch(`/api/notification/${id}/read`, { method: 'PATCH' });
+            const notif = notificationsData.find(n => n.id === id);
+            if (notif) notif.read = true;
+            updateNotifBadge();
+            renderNotifications();
+        } catch (err) {
+            showToast('Failed to mark as read', 'error');
+        }
+    }
+
+    async function markAllAsRead() {
+        const unreadOnly = notificationsData.filter(n => !n.read);
+        if (unreadOnly.length === 0) return;
+        try {
+            await apiFetch('/api/notification/read-all', { method: 'PATCH' });
+            notificationsData.forEach(n => n.read = true);
+            updateNotifBadge();
+            renderNotifications();
+        } catch (err) {
+            showToast('Failed to mark all as read', 'error');
+        }
+    }
+
+    async function deleteNotification(id) {
+        try {
+            await apiFetch(`/api/notification/${id}`, { method: 'DELETE' });
+            const idx = notificationsData.findIndex(n => n.id === id);
+            if (idx !== -1) {
+                notificationsData.splice(idx, 1);
+                updateNotifBadge();
+                renderNotifications();
+            }
+        } catch (err) {
+            showToast('Failed to delete notification', 'error');
+        }
+    }
+
+    async function clearAllNotifications() {
+        const count = notificationsData.length;
+        if (count === 0) return;
+        
+        confirmDelete(
+            `Clear all ${count} notification${count === 1 ? '' : 's'}? This cannot be undone.`,
+            async () => {
+                try {
+                    await apiFetch('/api/notification', { method: 'DELETE' });
+                    notificationsData = [];
+                    updateNotifBadge();
+                    renderNotifications();
+                } catch (err) {
+                    showToast('Failed to clear notifications', 'error');
+                }
+            },
+            { icon: '🔔', title: 'Clear Notifications?', confirmLabel: 'Clear All', btnColor: '#ef4444' }
+        );
     }
 
     document.querySelectorAll('.notif-filter-btn').forEach(btn => {
@@ -3017,24 +3109,9 @@ if (page === 'notifications') {
         });
     });
 
-    document.getElementById('markAllReadBtn')?.addEventListener('click', () => {
-        markAllNotifsRead();
-        renderNotifications();
-    });
+    document.getElementById('markAllReadBtn')?.addEventListener('click', markAllAsRead);
+    document.getElementById('clearAllNotifs')?.addEventListener('click', clearAllNotifications);
 
-    document.getElementById('clearAllNotifs')?.addEventListener('click', () => {
-        const count = getNotifications().length;
-        if (count === 0) return;
-        confirmDelete(
-            `Clear all ${count} notification${count === 1 ? '' : 's'}? This cannot be undone.`,
-            () => { saveNotifications([]); updateNotifBadge(); renderNotifications(); },
-            { icon: '🔔', title: 'Clear Notifications?', confirmLabel: 'Clear All', btnColor: '#ef4444' }
-        );
-    });
-
-    if (getNotifications().length === 0) {
-        pushNotification('system', 'Welcome to Goal Vault! 👋', 'Your notifications will appear here — tasks, habits, reminders, streaks and more.');
-    }
-
-    window.addEventListener('DOMContentLoaded', renderNotifications);
-}}
+    window.addEventListener('DOMContentLoaded', fetchNotifications);
+}
+}

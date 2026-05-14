@@ -1452,20 +1452,29 @@ if (page === 'habits') {
         if (blueVal)  blueVal.textContent  = streak;
     }
 
-    function saveHabits() { localStorage.setItem('habits', JSON.stringify(habits)); }
+    let habitsData = [];
+    let editingHabitId = null;
 
-    function resetMissedHabitStreaks() {
-        const today     = getTodayString();
-        const yesterday = getYesterdayString();
-        const lastDate  = localStorage.getItem('lastHabitDate');
-        if (!lastDate || lastDate === today) return;
-        if (lastDate !== yesterday) {
-            habits = habits.map(h => ({ ...h, done: false, streak: 0 }));
-        } else {
-            habits = habits.map(h => ({ ...h, done: false }));
+    function getLocalYYYYMMDD(dateObj = new Date()) {
+        return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+    }
+
+    async function fetchHabits() {
+        try {
+            const res = await apiFetch('/api/habits');
+            if (res.data) habitsData = res.data.map(h => ({ ...h, id: h._id }));
+            loadHabits();
+        } catch (err) {
+            console.error(err);
+            habitContainer.innerHTML = `<div style="color:#ef4444;text-align:center;padding:20px;">Failed to load habits.</div>`;
         }
-        saveHabits();
-        localStorage.setItem('lastHabitDate', today);
+    }
+
+    function isHabitCompletedToday(habit) {
+        const todayStr = getLocalYYYYMMDD();
+        return (habit.completedDates || []).some(d => {
+            return getLocalYYYYMMDD(new Date(d)) === todayStr;
+        });
     }
 
     function updateWeeklyChart() {
@@ -1476,7 +1485,7 @@ if (page === 'habits') {
         barCols.forEach((col, i) => {
             const d = new Date(today);
             d.setDate(today.getDate() - (6 - i));
-            const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const dateStr = getLocalYYYYMMDD(d);
             const pct   = parseInt(localStorage.getItem(`habitHistory_${dateStr}`)) || 0;
             const bar   = col.querySelector('.bar');
             const label = col.querySelector('.bar-day');
@@ -1485,33 +1494,116 @@ if (page === 'habits') {
         });
         const perfPct = document.querySelector('#habitSection .perf-pct');
         if (perfPct) {
-            const pct = habits.length === 0 ? 0 : Math.round((habits.filter(h => h.done).length / habits.length) * 100);
+            const pct = habitsData.length === 0 ? 0 : Math.round((habitsData.filter(h => isHabitCompletedToday(h)).length / habitsData.length) * 100);
             perfPct.textContent = pct + '%';
         }
     }
 
-    function loadHabits() {
-        habits = getHabits();
-        habitContainer.innerHTML = '';
-        const todayStr = getTodayString();
-        resetMissedHabitStreaks();
-        if (localStorage.getItem('lastHabitDate') !== todayStr) localStorage.setItem('lastHabitDate', todayStr);
+    function buildHabitItem(habit) {
+        const freqLabels = { daily: 'Daily', weekdays: 'Weekdays', weekends: 'Weekends' };
+        const completedToday = isHabitCompletedToday(habit);
 
-        const pending      = habits.filter(h => !h.done).length;
+        const card = document.createElement('div');
+        card.className = `habit-card ${completedToday ? 'habit-completed' : ''}`;
+        card.dataset.id = habit.id;
+
+        let streakClass = 'streak-cold';
+        const streak = habit.currentstreak || 0;
+        if (streak >= 3)  streakClass = 'streak-warm';
+        if (streak >= 7)  streakClass = 'streak-hot';
+        if (streak >= 14) streakClass = 'streak-fire';
+
+        const r         = 15;
+        const circ      = 2 * Math.PI * r;
+        const pct       = completedToday ? 100 : 0;
+        const offset    = circ - (pct / 100) * circ;
+        const ringColor = completedToday ? '#5cb85c' : '#378ADD';
+        
+        const freqLabel = freqLabels[habit.frequency] || 'Daily';
+        const reminderTxt = habit.reminderTime ? ` · ⏰ ${habit.reminderTime}` : '';
+
+        card.innerHTML = `
+<div class="habit-icon ${streakClass}">${habit.icon || '🌟'}</div>
+<div class="habit-info">
+  <div class="habit-name">${habit.name}</div>
+  <div class="habit-streak">🔥 ${streak} Day Streak <span style="color:#aaa;font-size:11px;">(Best: ${habit.higheststreak || 0})</span><br><span class="freq" style="font-size:11px;">• ${freqLabel}${reminderTxt}</span></div>
+</div>
+<div class="habit-ring-wrap">
+  <svg width="36" height="36" viewBox="0 0 36 36">
+    <circle class="habit-ring-bg" cx="18" cy="18" r="${r}"/>
+    <circle class="habit-ring-fill" cx="18" cy="18" r="${r}"
+      stroke="${ringColor}" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
+  </svg>
+  <span class="habit-ring-label">${pct}%</span>
+</div>
+<button class="${completedToday ? 'btn-done' : 'btn-mark'} complete-btn" data-id="${habit.id}" ${completedToday ? 'disabled' : ''}>
+  ${completedToday ? '✓ Done' : 'Mark done'}
+</button>
+<div class="habit-actions" style="display:flex; flex-direction:column; gap:4px; margin-left:8px;">
+    <span class="habit-edit" style="cursor:pointer;color:#3b82f6;font-size:13px;" title="Edit">✏️</span>
+    <span class="habit-delete" style="cursor:pointer;color:#ef4444;font-size:13px;" title="Delete">✕</span>
+</div>`;
+
+        card.querySelector('.complete-btn').addEventListener('click', async function() {
+            if (completedToday) return;
+            try {
+                const res = await apiFetch(`/api/habits/${habit.id}/complete`, { method: 'PATCH' });
+                const updatedHabit = { ...res.data, id: res.data._id };
+                const idx = habitsData.findIndex(h => h.id === habit.id);
+                if (idx !== -1) {
+                    habitsData[idx] = updatedHabit;
+                    const newCard = buildHabitItem(updatedHabit);
+                    card.replaceWith(newCard);
+                    updateWeeklyChart();
+                    
+                    if (updatedHabit.currentstreak > streak) {
+                        pushNotification('streak', `${updatedHabit.currentstreak}-day habit streak! 🔥`, `You've kept "${updatedHabit.name}" going for ${updatedHabit.currentStreak} days straight!`);
+                    }
+                }
+            } catch(err) {
+                showToast('Failed to complete habit', 'error');
+            }
+        });
+
+        card.querySelector('.habit-edit').addEventListener('click', () => {
+            editingHabitId = habit.id;
+            document.getElementById('habitInput').value = habit.name;
+            const freqInput = document.getElementById('habitFreqInput');
+            if (freqInput) freqInput.value = habit.frequency || 'daily';
+            document.getElementById('addHabitBtn').innerHTML = '💾';
+            const errEl = document.getElementById('habitInputError');
+            if (errEl) errEl.style.display = 'none';
+        });
+
+        card.querySelector('.habit-delete').addEventListener('click', () => {
+            confirmDelete(`Delete "${habit.name}"? Your streak will be lost.`, async () => {
+                try {
+                    await apiFetch(`/api/habits/${habit.id}`, { method: 'DELETE' });
+                    habitsData = habitsData.filter(h => h.id !== habit.id);
+                    pushNotification('delete', 'Habit deleted', `"${habit.name}" has been removed.`);
+                    loadHabits();
+                } catch(err) {
+                    showToast('Failed to delete habit', 'error');
+                }
+            });
+        });
+
+        return card;
+    }
+
+    function loadHabits() {
+        habitContainer.innerHTML = '';
+        
+        const pending = habitsData.filter(h => !isHabitCompletedToday(h)).length;
         const pendingBadge = document.getElementById('pendingBadge');
         if (pendingBadge) pendingBadge.textContent = `${pending} PENDING TODAY`;
 
-        const habitStreakText = document.getElementById('habitSreakText');
-        if (habitStreakText) habitStreakText.textContent = streak > 0
-            ? `You're on a ${streak}-day winning streak! 🔥`
-            : `Start your streak today — complete all habits!`;
-
-        const totalHabits = habits.length;
-        const doneToday   = habits.filter(h => h.done).length;
+        const totalHabits = habitsData.length;
+        const doneToday   = totalHabits - pending;
         const todayPct    = totalHabits === 0 ? 0 : Math.round((doneToday / totalHabits) * 100);
-        localStorage.setItem(`habitHistory_${todayStr}`, todayPct);
+        localStorage.setItem(`habitHistory_${getLocalYYYYMMDD()}`, todayPct);
 
-        if (habits.length === 0) {
+        if (habitsData.length === 0) {
             habitContainer.innerHTML = `
 <div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-family:'Inter',sans-serif;">
   <div style="font-size:2.5rem;margin-bottom:12px;">🌱</div>
@@ -1522,62 +1614,8 @@ if (page === 'habits') {
             return;
         }
 
-        habits.forEach((habit, index) => {
-            const card = document.createElement('div');
-            card.className = `habit-card ${habit.done ? 'habit-completed' : ''}`;
-            let streakClass = 'streak-cold';
-            if (habit.streak >= 3)  streakClass = 'streak-warm';
-            if (habit.streak >= 7)  streakClass = 'streak-hot';
-            if (habit.streak >= 14) streakClass = 'streak-fire';
-            const r         = 15;
-            const circ      = 2 * Math.PI * r;
-            const pct       = habit.done ? 100 : 0;
-            const offset    = circ - (pct / 100) * circ;
-            const ringColor = habit.done ? '#5cb85c' : '#378ADD';
-
-            card.innerHTML = `
-<div class="habit-icon ${streakClass}">${habit.icon || '🌟'}</div>
-<div class="habit-info">
-  <div class="habit-name">${habit.text}</div>
-  <div class="habit-streak">🔥 ${habit.streak || 0} Day Streak<span class="freq">• Daily</span></div>
-</div>
-<div class="habit-ring-wrap">
-  <svg width="36" height="36" viewBox="0 0 36 36">
-    <circle class="habit-ring-bg" cx="18" cy="18" r="${r}"/>
-    <circle class="habit-ring-fill" cx="18" cy="18" r="${r}"
-      stroke="${ringColor}" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
-  </svg>
-  <span class="habit-ring-label">${pct}%</span>
-</div>
-<button class="${habit.done ? 'btn-done' : 'btn-mark'}" ${habit.done ? 'disabled' : ''}>
-  ${habit.done ? '✓ Done' : 'Mark done'}
-</button>
-<span class="habit-delete" style="cursor:pointer;color:#aaa;margin-left:8px;font-size:13px;">✕</span>`;
-
-            card.querySelector('button').addEventListener('click', function () {
-                if (habits[index].done) return;
-                habits[index].done   = true;
-                habits[index].streak = (habits[index].streak || 0) + 1;
-                pushNotification('habit', 'Habit completed! 🎉', `"${habit.text}" done for today. ${habits[index].streak} day streak!`);
-                const milestones = [7, 14, 21, 30, 60, 100];
-                if (milestones.includes(habits[index].streak)) {
-                    pushNotification('streak', `${habits[index].streak}-day habit streak! 🔥`, `You've kept "${habit.text}" going for ${habits[index].streak} days straight!`);
-                }
-                saveHabits();
-                loadHabits();
-                checkDailyCompletion();
-            });
-
-            card.querySelector('.habit-delete').addEventListener('click', () => {
-                confirmDelete(`Delete "${habit.text}"? Your streak will be lost.`, () => {
-                    pushNotification('delete', 'Habit deleted', `"${habit.text}" and its ${habit.streak || 0}-day streak have been removed.`);
-                    habits.splice(index, 1);
-                    saveHabits();
-                    loadHabits();
-                });
-            });
-
-            habitContainer.appendChild(card);
+        habitsData.forEach(habit => {
+            habitContainer.appendChild(buildHabitItem(habit));
         });
 
         updateWeeklyChart();
@@ -1588,7 +1626,7 @@ if (page === 'habits') {
             habitHistory.id = 'completedHabitHistory';
             habitContainer.parentElement.appendChild(habitHistory);
         }
-        const completedHabits = habits.filter(h => h.done);
+        const completedHabits = habitsData.filter(h => isHabitCompletedToday(h));
         habitHistory.innerHTML = `
 <h4 style="margin:24px 0 10px;font-size:0.78rem;text-transform:uppercase;letter-spacing:1px;
   color:#888;font-family:'JetBrains Mono',monospace;">Completed Today</h4>`;
@@ -1602,9 +1640,9 @@ if (page === 'habits') {
   <span style="font-size:16px;">${habit.icon || '🌟'}</span>
   <div style="flex:1;">
     <div style="font-size:0.88rem;color:#555;font-weight:600;text-decoration:line-through;
-      font-family:'Poppins',sans-serif;">${habit.text}</div>
+      font-family:'Poppins',sans-serif;">${habit.name}</div>
     <div style="font-size:0.75rem;color:#5cb85c;margin-top:2px;font-family:'Inter',sans-serif;">
-      🔥 ${habit.streak} day streak
+      🔥 ${habit.currentstreak || 0} day streak
     </div>
   </div>
   <span style="color:#5cb85c;font-size:16px;font-weight:700;">✓</span>
@@ -1615,7 +1653,7 @@ if (page === 'habits') {
         const pastDays = [];
         for (let i = 1; i <= 6; i++) {
             const d = new Date(); d.setDate(d.getDate() - i);
-            const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const dateStr = getLocalYYYYMMDD(d);
             const p = parseInt(localStorage.getItem(`habitHistory_${dateStr}`)) || 0;
             if (p > 0) pastDays.push({ dateStr, pct: p, d });
         }
@@ -1674,14 +1712,51 @@ if (page === 'habits') {
         return '🌟';
     }
 
-    addHabitBtn.addEventListener('click', () => {
-        const text = habitInput.value.trim();
-        if (!text) return;
-        habits.push({ text, done: false, streak: 0, icon: getHabitEmoji(text), freq: 'Daily' });
-        pushNotification('habit', 'New habit created 🌱', `"${text}" has been added to your daily habits. Stay consistent!`);
-        habitInput.value = '';
-        saveHabits();
-        loadHabits();
+    addHabitBtn.addEventListener('click', async () => {
+        const name = habitInput.value.trim();
+        const freqInput = document.getElementById('habitFreqInput');
+        const frequency = freqInput ? freqInput.value : 'daily';
+        const errEl = document.getElementById('habitInputError');
+        
+        if (!name || !frequency) {
+            if (errEl) errEl.style.display = 'block';
+            return;
+        }
+        if (errEl) errEl.style.display = 'none';
+
+        try {
+            if (editingHabitId) {
+                const res = await apiFetch(`/api/habits/${editingHabitId}`, {
+                    method: 'PUT',
+                    body: { name, frequency, icon: getHabitEmoji(name) }
+                });
+                const updatedHabit = { ...res.data, id: res.data._id };
+                const idx = habitsData.findIndex(h => h.id === editingHabitId);
+                if (idx !== -1) {
+                    habitsData[idx] = updatedHabit;
+                    const card = document.querySelector(`.habit-card[data-id="${editingHabitId}"]`);
+                    if (card) {
+                        card.replaceWith(buildHabitItem(updatedHabit));
+                    }
+                }
+                editingHabitId = null;
+                document.getElementById('addHabitBtn').innerHTML = '+';
+                pushNotification('habit', 'Habit updated', `"${name}" has been updated.`);
+            } else {
+                const res = await apiFetch('/api/habits', {
+                    method: 'POST',
+                    body: { name, frequency, icon: getHabitEmoji(name) }
+                });
+                const newHabit = { ...res.data, id: res.data._id };
+                habitsData.unshift(newHabit);
+                loadHabits();
+                pushNotification('habit', 'New habit created 🌱', `"${name}" has been added to your habits.`);
+            }
+            habitInput.value = '';
+            if (freqInput) freqInput.value = 'daily';
+        } catch (err) {
+            showToast('Failed to save habit', 'error');
+        }
     });
 
     habitInput.addEventListener('keypress', e => { if (e.key === 'Enter') addHabitBtn.click(); });
@@ -1704,7 +1779,7 @@ if (page === 'habits') {
     });
 
     window.addEventListener('DOMContentLoaded', () => {
-        loadHabits();
+        fetchHabits();
         renderCalendar();
         updateStreakPanel();
     });

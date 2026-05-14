@@ -59,8 +59,6 @@ function render(tasks, habits, goals, reminders, notes) {
 
   const pendingTasks   = tasks.filter(t => t.status !== 'done')
   const activeGoals    = goals.filter(g => g.status === 'active')
-  const shortTermGoals = goals.filter(g => g.status === 'active' && g.deadline && 
-    (new Date(g.deadline) - new Date()) <= 30 * 24 * 60 * 60 * 1000)
   const longTermGoals  = goals.filter(g => g.status === 'active' && (!g.deadline ||
     (new Date(g.deadline) - new Date()) > 30 * 24 * 60 * 60 * 1000))
   const taskCount  = pendingTasks.length
@@ -135,56 +133,7 @@ function render(tasks, habits, goals, reminders, notes) {
     + '</div>'
     + '</div>'
 
-  // ── Quick actions ─────────────────────────────────────
-  const quickActions = [
-    { icon: 'add_task',             label: 'New Task',     href: '/pages/tasks.html',     color: 'bg-primary-container/20 text-primary' },
-    { icon: 'repeat',               label: 'Log Habit',    href: '/pages/habits.html',    color: 'bg-tertiary-container/30 text-tertiary' },
-    { icon: 'emoji_events',         label: 'New Goal',     href: '/pages/goals.html',     color: 'bg-secondary-container text-secondary' },
-    { icon: 'edit_note',            label: 'Write Note',   href: '/pages/notes.html',     color: 'bg-surface-container text-on-surface' },
-    { icon: 'payments',             label: 'Finance',      href: '/pages/finance.html',   color: 'bg-error-container/20 text-error' },
-    { icon: 'notifications_active', label: 'Set Reminder', href: '/pages/reminders.html', color: 'bg-tertiary-container/20 text-tertiary' },
-  ]
-
-  let quickActionsHTML = ''
-  quickActions.forEach(a => {
-    quickActionsHTML += '<a href="' + a.href + '" class="flex items-center gap-3 p-3 rounded-xl hover:bg-surface-container transition-all group">'
-      + '<div class="w-9 h-9 rounded-lg ' + a.color + ' flex items-center justify-center shrink-0">'
-      + '<span class="material-symbols-outlined text-sm">' + a.icon + '</span></div>'
-      + '<span class="text-sm font-medium text-on-surface group-hover:text-primary transition-colors flex-1">' + a.label + '</span>'
-      + '<span class="material-symbols-outlined text-on-surface-variant text-sm opacity-0 group-hover:opacity-100 transition-opacity">chevron_right</span>'
-      + '</a>'
-  })
-
-  // ── Short-term goals block ────────────────────────────
-  const buildGoalItems = (goalsList) => {
-    if (goalsList.length === 0) return ''
-    let html = ''
-    goalsList.slice(0, 3).forEach(goal => {
-      const daysLeft = goal.deadline
-        ? Math.ceil((new Date(goal.deadline) - new Date()) / (1000 * 60 * 60 * 24))
-        : null
-      const deadlineHTML = daysLeft !== null
-        ? '<span class="text-[10px] ' + (daysLeft <= 7 ? 'text-error' : 'text-on-surface-variant') + ' font-bold">'
-          + (daysLeft < 0 ? 'Overdue' : daysLeft + 'd left') + '</span>'
-        : ''
-      html += '<div class="space-y-2">'
-        + '<div class="flex justify-between items-center">'
-        + '<p class="text-sm font-bold text-on-surface truncate flex-1 mr-2">' + goal.title + '</p>'
-        + '<div class="flex items-center gap-2 shrink-0">'
-        + deadlineHTML
-        + '<p class="text-[10px] font-bold text-tertiary uppercase">' + goal.progress + '%</p>'
-        + '</div>'
-        + '</div>'
-        + '<div class="progress-bar"><div class="progress-bar__fill" style="width:' + goal.progress + '%"></div></div>'
-        + '</div>'
-    })
-    return html
-  }
-
-  const shortTermHTML = shortTermGoals.length === 0
-    ? '<p class="text-xs text-on-surface-variant text-center py-4">No short-term goals (due within 30 days)</p>'
-    : buildGoalItems(shortTermGoals)
-
+  
   const longTermHTML = longTermGoals.length === 0
     ? '<div class="flex flex-col items-center justify-center py-8 gap-3 text-center">'
       + '<span class="material-symbols-outlined text-primary text-3xl">emoji_events</span>'
@@ -294,33 +243,7 @@ function render(tasks, habits, goals, reminders, notes) {
         </div>
       </div>
 
-      <!-- 5. Goals + Quick Actions -->
-      <div class="dash-goals-grid">
-
-        <!-- Short-term goals -->
-        <div class="bg-surface-container-lowest p-6 rounded-xl ring-1 ring-outline-variant/5">
-          <div class="flex items-center justify-between mb-5">
-            <div>
-              <h3 class="text-base font-bold font-headline">Short-term Goals</h3>
-              <p class="text-xs text-on-surface-variant mt-0.5">Due within 30 days</p>
-            </div>
-            <a href="/pages/goals.html" class="text-xs font-bold text-primary hover:underline">View All</a>
-          </div>
-          <div class="space-y-4">${shortTermHTML}</div>
-
-          <!-- Daily reminder toggle for short-term goals -->
-          ${shortTermGoals.length > 0 ? `
-          <div class="mt-4 pt-4 border-t border-outline-variant/10">
-            <button id="dash-goal-reminder-btn"
-                    class="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-surface-container transition-all text-left"
-                    onclick="setGoalDailyReminder()">
-              <span class="material-symbols-outlined text-sm text-primary">notifications_active</span>
-              <span class="text-xs font-bold text-on-surface">Set daily reminder for goals</span>
-              <span class="material-symbols-outlined text-on-surface-variant text-sm ml-auto">chevron_right</span>
-            </button>
-          </div>` : ''}
-        </div>
-
+      
         <!-- Strategic (long-term) goals -->
         <div class="bg-surface-container-lowest p-6 rounded-xl ring-1 ring-outline-variant/5">
           <div class="flex items-center justify-between mb-5">
@@ -341,12 +264,6 @@ function render(tasks, habits, goals, reminders, notes) {
               <span class="material-symbols-outlined text-on-surface-variant text-sm ml-auto">chevron_right</span>
             </button>
           </div>` : ''}
-        </div>
-
-        <!-- Quick actions -->
-        <div class="bg-surface-container-low p-6 rounded-xl">
-          <h3 class="text-base font-bold font-headline mb-5">Quick Actions</h3>
-          <div class="space-y-1">${quickActionsHTML}</div>
         </div>
 
       </div>

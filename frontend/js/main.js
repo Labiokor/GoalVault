@@ -1,96 +1,81 @@
-import '../css/main.css'
-import { renderSidebar } from './components/sidebar.js'
-import { renderNavbar } from './components/navbar.js'
-import { isLoggedIn, clearAuth } from './utils/helpers.js'
-import { api } from './api/api.js'
+import { getUser } from '../utils/helpers.js'
 
-// Restore dark mode
-if (localStorage.getItem('gv_dark_mode') === 'true') {
-  document.documentElement.classList.add('dark')
+const NAV_ITEMS = [
+  { icon: 'dashboard',           label: 'Dashboard',     href: '/pages/dashboard.html' },
+  { icon: 'check_circle',        label: 'Tasks',         href: '/pages/tasks.html' },
+  { icon: 'repeat',              label: 'Habits',        href: '/pages/habits.html' },
+  { icon: 'description',         label: 'Notes',         href: '/pages/notes.html' },
+  { icon: 'emoji_events',        label: 'Goals',         href: '/pages/goals.html' },
+  { icon: 'notifications_active',label: 'Reminders',     href: '/pages/reminders.html' },
+  { icon: 'payments',            label: 'Finance',       href: '/pages/finance.html' },
+  { icon: 'notifications',       label: 'Notifications', href: '/pages/notification.html' },
+  { icon: 'settings',            label: 'Settings',      href: '/pages/settings.html' },
+]
+
+export function renderSidebar(activePage = '') {
+  const sidebar = document.getElementById('sidebar')
+  if (!sidebar) return
+
+  const user = getUser()
+  const initials = user.name ? user.name.charAt(0).toUpperCase() : 'A'
+  const userName = user.name || 'User'
+
+  sidebar.innerHTML = `
+    <div class="logo-section mb-10 px-4 flex items-center justify-between">
+      <div class="sidebar-text">
+        <h1 class="text-xl font-black text-blue-600 font-headline">GoalVault</h1>
+        <p class="text-[10px] font-label uppercase tracking-widest text-on-surface-variant opacity-70">Be PRODUCTIVE</p>
+      </div>
+      <button class="text-slate-500 hover:text-blue-600 transition-colors" id="sidebar-toggle">
+        <span class="material-symbols-outlined">menu</span>
+      </button>
+    </div>
+
+    <nav class="flex-1 space-y-1 overflow-y-auto no-scrollbar">
+      ${NAV_ITEMS.map(item => {
+        const isActive = activePage === item.label.toLowerCase()
+        return `
+          <a href="${item.href}"
+             class="nav-item ${isActive ? 'nav-item--active' : ''}">
+            <span class="material-symbols-outlined"
+              style="${isActive ? "font-variation-settings:'FILL' 1" : ''}">
+              ${item.icon}
+            </span>
+            <span class="sidebar-text text-sm">${item.label}</span>
+          </a>
+        `
+      }).join('')}
+    </nav>
+
+    <div class="mt-auto pt-6 border-t border-surface-container-low flex items-center gap-3 px-2">
+      <div class="avatar">${initials}</div>
+      <div class="sidebar-text overflow-hidden">
+        <p class="text-sm font-bold text-on-surface truncate">${userName}</p>
+        <p class="text-xs text-on-surface-variant truncate">Member</p>
+      </div>
+    </div>
+  `
+
+  document.getElementById('sidebar-toggle')?.addEventListener('click', toggleSidebar)
+
+  // At the end of renderSidebar function, after the innerHTML is set
+  document.querySelector('.avatar')?.addEventListener('click', () => {
+  window.location.href = '/pages/settings.html'
+})
+  document.querySelector('.avatar')?.style.setProperty('cursor', 'pointer')
 }
 
-const page = document.body.dataset.page || ''
-const publicPages = ['login', 'register']
+export function toggleSidebar() {
+  const sidebar = document.getElementById('sidebar')
+  const topBar = document.getElementById('top-bar')
+  const mainContent = document.getElementById('main-content')
 
-if (publicPages.includes(page)) {
-  // Always clear auth when visiting login/register
-  // This forces user to login every time they visit
-  clearAuth()
-} else {
-  // On protected pages — if not logged in go to login
-  if (!isLoggedIn()) {
-    window.location.href = '/login.html'
-  } else {
-    renderSidebar(page)
-    renderNavbar({ placeholder: getPlaceholder(page) })
-    startGlobalReminderPolling()
-  }
-}
-
-
-function getPlaceholder(page) {
-  const map = {
-    dashboard:     'Search your sanctuary...',
-    tasks:         'Search tasks...',
-    habits:        'Search habits...',
-    notes:         'Search notes...',
-    goals:         'Search goals...',
-    finance:       'Search transactions...',
-    reminders:     'Search reminders...',
-    notifications: 'Search notifications...',
-    settings:      'Search settings...',
-  }
-  return map[page] || 'Search...'
-}
-
-
-async function startGlobalReminderPolling() {
-  // Request permission
-  if ('Notification' in window && Notification.permission === 'default') {
-    await Notification.requestPermission()
+  if (window.innerWidth <= 768) {
+    sidebar?.classList.toggle('mobile-open')
+    return
   }
 
-  const poll = async () => {
-    try {
-      const res = await api.reminders.getAll()
-      const reminders = res.data || []
-      const now = new Date()
-
-      for (const reminder of reminders) {
-        if (reminder.completed) continue
-
-        const dt = new Date(reminder.datetime)
-        const diffMs = dt - now
-        const diffMins = diffMs / 60000
-
-        // Fire when within 1 minute of reminder time
-        if (diffMins >= 0 && diffMins <= 1) {
-          // Browser notification popup
-          if ('Notification' in window && Notification.permission === 'granted') {
-            new Notification('GoalVault — ' + reminder.title, {
-              body: reminder.notes || 'Reminder is due now!',
-              icon: '/favicon.ico'
-            })
-          }
-
-          // Mark reminder completed
-          try {
-            await api.reminders.update(reminder._id, { completed: true })
-          } catch (e) {
-            console.error('Failed to complete reminder:', e.message)
-          }
-
-          // Show bell dot
-          const dot = document.getElementById('notif-dot')
-          if (dot) dot.classList.remove('hidden')
-        }
-      }
-    } catch (err) {
-      console.error('Global reminder poll failed:', err.message)
-    }
-  }
-
-  // Run immediately then every 30 seconds
-  poll()
-  setInterval(poll, 30000)
+  sidebar?.classList.toggle('collapsed')
+  mainContent?.classList.toggle('expanded')
+  topBar?.classList.toggle('expanded')
 }

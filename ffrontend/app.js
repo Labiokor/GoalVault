@@ -1716,12 +1716,20 @@ if (page === 'habits') {
 if (page === 'planner') {
 
     // ── Data helpers ──────────────────────────────────────────
-    function getPlannerGoals() {
-        return JSON.parse(localStorage.getItem('plannerGoals') || '[]');
+    let plannerGoals = [];
+    async function fetchGoals() {
+        try {
+            const res = await apiFetch('/api/goals');
+            if (res.data) plannerGoals = res.data.map(g => ({...g, id: g._id}));
+            renderGoals(currentTab);
+        } catch(e) {
+            console.error(e);
+            const list = document.getElementById('plannerList');
+            if (list) list.innerHTML = `<div class="planner-empty" style="color:#ef4444;">Failed to load goals. Please try again.</div>`;
+        }
     }
-    function savePlannerGoals(goals) {
-        localStorage.setItem('plannerGoals', JSON.stringify(goals));
-    }
+    function getPlannerGoals() { return plannerGoals; }
+    function savePlannerGoals(goals) { plannerGoals = goals; }
 
     // ── State ─────────────────────────────────────────────────
     let shortPriority  = 'low';
@@ -1729,6 +1737,7 @@ if (page === 'planner') {
     let shortFreq      = 'daily';
     let longFreq       = 'daily';
     let updateTargetId = null;
+    let editingGoalId  = null;
     let currentTab     = 'all';
 
     const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -1910,6 +1919,9 @@ if (page === 'planner') {
     <button class="planner-action-btn complete-btn" data-action="complete" data-id="${goal.id}" title="Mark complete">
       <i class="fa-solid fa-check"></i>
     </button>` : ''}
+    <button class="planner-action-btn edit-btn" data-action="edit" data-id="${goal.id}" title="Edit" style="color:#3b82f6;">
+      <i class="fa-solid fa-pen"></i>
+    </button>
     <button class="planner-action-btn danger" data-action="delete" data-id="${goal.id}" title="Delete">
       <i class="fa-solid fa-xmark"></i>
     </button>
@@ -1920,42 +1932,72 @@ if (page === 'planner') {
             btn.addEventListener('click', function (e) {
                 e.stopPropagation();
                 const action = this.dataset.action;
-                const id     = +this.dataset.id;
+                const id     = this.dataset.id;
 
                 if (action === 'delete') {
                     const g = getPlannerGoals().find(x => x.id === id);
-                    confirmDelete(`Delete "${g?.title || g?.text}"? This cannot be undone.`, () => {
-                        removeGoalReminders(id);
-                        const updated = getPlannerGoals().filter(x => x.id !== id);
-                        savePlannerGoals(updated);
-                        pushNotification('delete', 'Goal deleted', `"${g?.title || g?.text}" and its reminders were removed.`);
-                        renderGoals(currentTab);
+                    confirmDelete(`Delete "${g?.title || g?.text}"? This cannot be undone.`, async () => {
+                        try {
+                            await apiFetch(`/api/goals/${id}`, { method: 'DELETE' });
+                            removeGoalReminders(id);
+                            plannerGoals = plannerGoals.filter(x => x.id !== id);
+                            pushNotification('delete', 'Goal deleted', `"${g?.title || g?.text}" was removed.`);
+                            renderGoals(currentTab);
+                        } catch (err) {
+                            showToast('Failed to delete goal', 'error');
+                        }
                     });
                 }
 
                 if (action === 'complete') {
-                    const goals = getPlannerGoals();
-                    const g     = goals.find(x => x.id === id);
+                    const g = getPlannerGoals().find(x => x.id === id);
                     if (g) {
-                        g.status   = 'completed';
-                        g.progress = 100;
-                        // Add a completion log entry if none exists
-                        if (!g.progressLog) g.progressLog = [];
-                        g.progressLog.unshift({
-                            pct:  100,
-                            prev: g.progress || 0,
-                            note: '🏆 Goal marked as complete!',
-                            date: new Date().toISOString(),
-                        });
-                        savePlannerGoals(goals);
-                        pushNotification('goal', 'Goal completed! 🎉', `"${g.title || g.text}" marked as complete. Well done!`);
-                        showToast(`Goal completed! 🎉`, 'success');
-                        renderGoals(currentTab);
+                        apiFetch(`/api/goals/${id}`, {
+                            method: 'PUT',
+                            body: { ...g, status: 'completed', progress: 100 }
+                        }).then(() => {
+                            g.status   = 'completed';
+                            g.progress = 100;
+                            if (!g.progressLog) g.progressLog = [];
+                            g.progressLog.unshift({
+                                pct:  100,
+                                prev: g.progress || 0,
+                                note: '🏆 Goal marked as complete!',
+                                date: new Date().toISOString(),
+                            });
+                            pushNotification('goal', 'Goal completed! 🎉', `"${g.title || g.text}" marked as complete. Well done!`);
+                            showToast(`Goal completed! 🎉`, 'success');
+                            renderGoals(currentTab);
+                        }).catch(() => showToast('Failed to complete goal', 'error'));
                     }
                 }
 
                 if (action === 'update') {
                     openUpdateModal(id);
+                }
+
+                if (action === 'edit') {
+                    const g = getPlannerGoals().find(x => x.id === id);
+                    if (!g) return;
+                    editingGoalId = id;
+                    if (g.type === 'short') {
+                        document.getElementById('shortGoalText').value = g.title || g.text || '';
+                        document.getElementById('shortGoalDesc').value = g.description || '';
+                        document.getElementById('shortGoalDay').value = g.day || '';
+                        document.getElementById('createShortGoalBtn').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Changes';
+                        document.querySelector('#shortTermOverlay .goal-modal-title').textContent = 'Edit Short-Term Goal ⚡';
+                        openOverlay('shortTermOverlay');
+                    } else {
+                        document.getElementById('longGoalTitle').value = g.title || g.text || '';
+                        document.getElementById('longGoalDesc').value = g.description || '';
+                        document.getElementById('longGoalTargetValue').value = g.targetValue || '';
+                        document.getElementById('longGoalTargetAmount').value = g.targetAmount || '';
+                        document.getElementById('longGoalDeadline').value = g.deadline ? g.deadline.split('T')[0] : '';
+                        document.getElementById('longGoalInitProgress').value = g.progress || 0;
+                        document.getElementById('createLongGoalBtn').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Changes';
+                        document.querySelector('#longTermOverlay .goal-modal-title').textContent = 'Edit Long-Term Goal 🎯';
+                        openOverlay('longTermOverlay');
+                    }
                 }
             });
         });
@@ -2169,6 +2211,9 @@ if (page === 'planner') {
 
     // ── Reset forms ───────────────────────────────────────────
     function resetShortForm() {
+        editingGoalId = null;
+        document.getElementById('createShortGoalBtn').innerHTML = '<i class="fa-solid fa-plus"></i> Add Goal';
+        document.querySelector('#shortTermOverlay .goal-modal-title').textContent = 'Short-Term Goal ⚡';
         document.getElementById('shortGoalText').value         = '';
         document.getElementById('shortGoalDesc').value         = '';
         document.getElementById('shortGoalDay').value          = '';
@@ -2185,6 +2230,9 @@ if (page === 'planner') {
     }
 
     function resetLongForm() {
+        editingGoalId = null;
+        document.getElementById('createLongGoalBtn').innerHTML = '<i class="fa-solid fa-plus"></i> Create Goal';
+        document.querySelector('#longTermOverlay .goal-modal-title').textContent = 'Long-Term Goal 🎯';
         document.getElementById('longGoalTitle').value         = '';
         document.getElementById('longGoalDesc').value          = '';
         document.getElementById('longGoalTargetValue').value   = '';
@@ -2218,8 +2266,8 @@ if (page === 'planner') {
         });
     }
 
-    // ── Create short-term goal ────────────────────────────────
-    document.getElementById('createShortGoalBtn')?.addEventListener('click', () => {
+    // ── Create or Edit short-term goal ────────────────────────────────
+    document.getElementById('createShortGoalBtn')?.addEventListener('click', async () => {
         const textEl = document.getElementById('shortGoalText');
         const errEl  = document.getElementById('shortGoalError');
         const text   = textEl?.value.trim();
@@ -2239,36 +2287,46 @@ if (page === 'planner') {
             showToast('Reminder date and time must be in the future.', 'error'); return;
         }
 
-        const goalId  = Date.now();
-        const goals   = getPlannerGoals();
-        const newGoal = {
-            id: goalId, type: 'short', text, title: text,
-            description: desc || '', day: day || '',
-            priority: shortPriority, status: 'active', progress: 0,
-            hasReminder: wantRemind, reminderFreq: wantRemind ? shortFreq : null,
-            progressLog: [],
-            createdAt: new Date().toISOString(),
+        const payload = {
+            type: 'short', title: text, description: desc || '', day: day || '',
+            priority: shortPriority, hasReminder: wantRemind, 
+            reminderFreq: wantRemind ? shortFreq : null
         };
-        goals.push(newGoal);
-        savePlannerGoals(goals);
 
-        if (wantRemind) {
-            addReminderForGoal(goalId, text, shortFreq, remDate, remTime);
-            pushNotification('reminder', 'Goal reminder set 🔔', `"${text}" reminder set — ${shortFreq}, starting ${remDate} at ${remTime}.`);
+        try {
+            if (editingGoalId) {
+                const res = await apiFetch(`/api/goals/${editingGoalId}`, { method: 'PUT', body: payload });
+                const idx = plannerGoals.findIndex(g => g.id === editingGoalId);
+                if (idx !== -1) plannerGoals[idx] = { ...res.data, id: res.data._id };
+                showToast(`"${text}" updated! ✓`, 'success');
+            } else {
+                payload.status = 'active';
+                payload.progress = 0;
+                payload.progressLog = [];
+                const res = await apiFetch('/api/goals', { method: 'POST', body: payload });
+                const newGoal = { ...res.data, id: res.data._id };
+                plannerGoals.unshift(newGoal);
+                
+                if (wantRemind) {
+                    addReminderForGoal(newGoal.id, text, shortFreq, remDate, remTime);
+                    pushNotification('reminder', 'Goal reminder set 🔔', `"${text}" reminder set — ${shortFreq}, starting ${remDate} at ${remTime}.`);
+                }
+                pushNotification('goal', 'Short-term goal added ⚡', `"${text}" added${day ? ` for ${day}` : ''} with ${shortPriority} priority.`);
+                showToast(`"${text}" added! ✓`, 'success');
+            }
+            closeOverlay('shortTermOverlay');
+            renderGoals(currentTab);
+        } catch(err) {
+            showToast(err.message || 'Error saving goal', 'error');
         }
-
-        pushNotification('goal', 'Short-term goal added ⚡', `"${text}" added${day ? ` for ${day}` : ''} with ${shortPriority} priority.`);
-        showToast(`"${text}" added! ✓`, 'success');
-        closeOverlay('shortTermOverlay');
-        renderGoals(currentTab);
     });
 
     document.getElementById('shortGoalText')?.addEventListener('keydown', e => {
         if (e.key === 'Enter') document.getElementById('createShortGoalBtn')?.click();
     });
 
-    // ── Create long-term goal ─────────────────────────────────
-    document.getElementById('createLongGoalBtn')?.addEventListener('click', () => {
+    // ── Create or Edit long-term goal ─────────────────────────────────
+    document.getElementById('createLongGoalBtn')?.addEventListener('click', async () => {
         const titleEl = document.getElementById('longGoalTitle');
         const errEl   = document.getElementById('longGoalError');
         const title   = titleEl?.value.trim();
@@ -2293,42 +2351,48 @@ if (page === 'planner') {
             showToast('Reminder date and time must be in the future.', 'error'); return;
         }
 
-        const goalId  = Date.now();
-        const goals   = getPlannerGoals();
-
-        // Build initial log entry if starting progress > 0
-        const initialLog = [];
-        if (initProg > 0) {
-            initialLog.push({
-                pct:  initProg,
-                prev: 0,
-                note: `🚀 Started at ${initProg}% progress.`,
-                date: new Date().toISOString(),
-            });
-        }
-
-        const newGoal = {
-            id: goalId, type: 'long', title, text: title,
-            description: desc || '', priority: longPriority,
+        const payload = {
+            type: 'long', title, description: desc || '', priority: longPriority,
             targetValue: targetValue || '', targetAmount: targetAmount || '',
-            deadline: deadline || '', progress: initProg,
-            status: initProg >= 100 ? 'completed' : 'active',
-            hasReminder: wantRemind, reminderFreq: wantRemind ? longFreq : null,
-            progressLog: initialLog,
-            createdAt: new Date().toISOString(),
+            deadline: deadline || null,
+            hasReminder: wantRemind, reminderFreq: wantRemind ? longFreq : null
         };
-        goals.push(newGoal);
-        savePlannerGoals(goals);
 
-        if (wantRemind) {
-            addReminderForGoal(goalId, title, longFreq, remDate, remTime);
-            pushNotification('reminder', 'Goal reminder set 🔔', `"${title}" reminder set — ${longFreq}, starting ${remDate} at ${remTime}.`);
+        try {
+            if (editingGoalId) {
+                const res = await apiFetch(`/api/goals/${editingGoalId}`, { method: 'PUT', body: payload });
+                const idx = plannerGoals.findIndex(g => g.id === editingGoalId);
+                if (idx !== -1) plannerGoals[idx] = { ...res.data, id: res.data._id };
+                showToast(`"${title}" updated! ✓`, 'success');
+            } else {
+                const initialLog = [];
+                if (initProg > 0) {
+                    initialLog.push({
+                        pct:  initProg, prev: 0,
+                        note: `🚀 Started at ${initProg}% progress.`,
+                        date: new Date().toISOString(),
+                    });
+                }
+                payload.progress = initProg;
+                payload.status = initProg >= 100 ? 'completed' : 'active';
+                payload.progressLog = initialLog;
+
+                const res = await apiFetch('/api/goals', { method: 'POST', body: payload });
+                const newGoal = { ...res.data, id: res.data._id };
+                plannerGoals.unshift(newGoal);
+
+                if (wantRemind) {
+                    addReminderForGoal(newGoal.id, title, longFreq, remDate, remTime);
+                    pushNotification('reminder', 'Goal reminder set 🔔', `"${title}" reminder set — ${longFreq}, starting ${remDate} at ${remTime}.`);
+                }
+                pushNotification('goal', 'Long-term goal created 🎯', `"${title}" added.${deadline ? ` Deadline: ${deadline}.` : ''}`);
+                showToast(`"${title}" created! ✓`, 'success');
+            }
+            closeOverlay('longTermOverlay');
+            renderGoals(currentTab);
+        } catch(err) {
+            showToast(err.message || 'Error saving goal', 'error');
         }
-
-        pushNotification('goal', 'Long-term goal created 🎯', `"${title}" added.${deadline ? ` Deadline: ${deadline}.` : ''}`);
-        showToast(`"${title}" created! ✓`, 'success');
-        closeOverlay('longTermOverlay');
-        renderGoals(currentTab);
     });
 
     document.getElementById('longGoalTitle')?.addEventListener('keydown', e => {
@@ -2440,7 +2504,7 @@ if (page === 'planner') {
     });
 
     // Save progress
-    document.getElementById('saveProgressBtn')?.addEventListener('click', () => {
+    document.getElementById('saveProgressBtn')?.addEventListener('click', async () => {
         if (updateTargetId === null) return;
 
         const goals  = getPlannerGoals();
@@ -2477,41 +2541,48 @@ if (page === 'planner') {
             date: new Date().toISOString(),
         };
 
-        // Update goal
-        goal.progress = newPct;
-        if (!goal.progressLog) goal.progressLog = [];
-        goal.progressLog.unshift(logEntry); // newest first
+        const updatedLog = [...(goal.progressLog || [])];
+        updatedLog.unshift(logEntry);
+        
+        try {
+            await apiFetch(`/api/goals/${updateTargetId}/progress`, {
+                method: 'PATCH',
+                body: { progress: newPct, milestones: goal.milestones, progressLog: updatedLog }
+            });
+            
+            goal.progress = newPct;
+            goal.progressLog = updatedLog;
 
-        if (newPct >= 100) {
-            goal.status   = 'completed';
-            goal.progress = 100;
-            // Update last entry to 100
-            goal.progressLog[0].pct = 100;
-            pushNotification('goal', 'Goal completed! 🎉', `"${goal.title}" reached 100% — you crushed it!`);
-            showToast(`"${goal.title}" completed! 🎉`, 'success');
-        } else {
-            const gain = newPct - prevPct;
-            pushNotification(
-                'goal', 'Goal progress updated',
-                `"${goal.title}" is now at ${newPct}%${gain > 0 ? ` (+${gain}%)` : ''} — ${note}`
-            );
-            showToast(`Progress updated to ${newPct}% ✓`, 'success');
+            if (newPct >= 100) {
+                goal.status   = 'completed';
+                goal.progress = 100;
+                goal.progressLog[0].pct = 100;
+                pushNotification('goal', 'Goal completed! 🎉', `"${goal.title}" reached 100% — you crushed it!`);
+                showToast(`"${goal.title}" completed! 🎉`, 'success');
+            } else {
+                const gain = newPct - prevPct;
+                pushNotification(
+                    'goal', 'Goal progress updated',
+                    `"${goal.title}" is now at ${newPct}%${gain > 0 ? ` (+${gain}%)` : ''} — ${note}`
+                );
+                showToast(`Progress updated to ${newPct}% ✓`, 'success');
+            }
+
+            closeOverlay('updateProgressOverlay');
+            updateTargetId = null;
+            renderGoals(currentTab);
+        } catch(err) {
+            showToast('Failed to update progress', 'error');
         }
-
-        savePlannerGoals(goals);
-        closeOverlay('updateProgressOverlay');
-        updateTargetId = null;
-        renderGoals(currentTab);
     });
 
     // ── Init ──────────────────────────────────────────────────
     window.addEventListener('DOMContentLoaded', () => {
         updateHero();
         updateStats();
-        renderGoals('all');
+        fetchGoals();
         getReminders().filter(r => r.fromGoal && !r.triggered).forEach(r => scheduleGoalReminder(r));
     });
-}
 
 // ============================================================
 // NOTEBOOK PAGE
@@ -2919,4 +2990,4 @@ if (page === 'notifications') {
     }
 
     window.addEventListener('DOMContentLoaded', renderNotifications);
-}
+}}

@@ -984,7 +984,9 @@ if (page === 'dashboard') {
         if (habitsRes.status === 'fulfilled') {
             const habits = habitsRes.value.data || [];
             const today = getLocalYYYYMMDD();
-            const doneToday = habits.filter(h => h.completedDates && h.completedDates.includes(today)).length;
+            const doneToday = habits.filter(h =>
+                (h.completedDates || []).some(d => getLocalYYYYMMDD(new Date(d)) === today)
+            ).length;
             const habitPct = habits.length === 0 ? 0 : Math.round((doneToday / habits.length) * 100);
             
             totalDone += doneToday;

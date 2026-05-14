@@ -123,10 +123,19 @@ function notifGroupLabel(dateStr) {
     return 'Older';
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+function getLocalYYYYMMDD(dateObj = new Date()) {
+    return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+}
+
+function initGlobals() {
     updateNotifBadge();
     autoSetNavActive();
-});
+}
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', initGlobals);
+} else {
+    initGlobals();
+}
 
 // ── Auto nav active state ─────────────────────────────────────
 function autoSetNavActive() {
@@ -887,10 +896,14 @@ if (page === 'dashboard') {
             apiFetch('/api/goals'),
             apiFetch('/api/habits'),
             apiFetch('/api/tasks'),
-            apiFetch('/api/reminders?completed=false')
+            apiFetch('/api/reminders?completed=false'),
+            apiFetch('/api/notes')
         ]);
 
-        const [goalsRes, habitsRes, tasksRes, remindersRes] = results;
+        const [goalsRes, habitsRes, tasksRes, remindersRes, notesRes] = results;
+
+        let totalDone = 0;
+        let totalItems = 0;
 
         // Process Goals
         if (goalsRes.status === 'fulfilled') {
@@ -920,6 +933,9 @@ if (page === 'dashboard') {
             const doneToday = habits.filter(h => h.completedDates && h.completedDates.includes(today)).length;
             const habitPct = habits.length === 0 ? 0 : Math.round((doneToday / habits.length) * 100);
             
+            totalDone += doneToday;
+            totalItems += habits.length;
+
             const dashHabitsNum = document.getElementById('dashHabitsNum');
             const habitTrend = document.getElementById('habitTrend');
             if (dashHabitsNum) dashHabitsNum.textContent = `${doneToday}/${habits.length}`;
@@ -933,6 +949,11 @@ if (page === 'dashboard') {
         if (tasksRes.status === 'fulfilled') {
             const tasks = tasksRes.value.data || [];
             const remaining = tasks.filter(t => t.status !== 'done').length;
+            const done = tasks.length - remaining;
+            
+            totalDone += done;
+            totalItems += tasks.length;
+
             const dashTasksNum = document.getElementById('dashTasksNum');
             const taskTrend = document.getElementById('taskTrend');
             if (dashTasksNum) dashTasksNum.textContent = remaining;
@@ -992,6 +1013,27 @@ if (page === 'dashboard') {
             }
         }
 
+        // Process Notes
+        if (notesRes.status === 'fulfilled') {
+            const notes = notesRes.value.data || [];
+            const dashNotesNum = document.getElementById('dashNotesNum');
+            const notesTrend = document.getElementById('notesTrend');
+            if (dashNotesNum) dashNotesNum.textContent = notes.length;
+            if (notesTrend) {
+                notesTrend.textContent = 'Updated';
+                notesTrend.className = 'stat-trend up';
+            }
+        }
+
+        // Global Progress
+        const globalProgressText = document.getElementById('globalProgressText');
+        const globalProgressFill = document.getElementById('globalProgressFill');
+        if (globalProgressText) globalProgressText.textContent = `${totalDone} / ${totalItems} done`;
+        if (globalProgressFill) {
+            const pct = totalItems === 0 ? 0 : Math.round((totalDone / totalItems) * 100);
+            globalProgressFill.style.width = pct + '%';
+        }
+
         // Global UI updates from localStorage (Streaks)
         const streakVal = parseInt(localStorage.getItem('streak') || '0');
         const userName = localStorage.getItem('gv_user_name') || 'User';
@@ -1011,10 +1053,16 @@ if (page === 'dashboard') {
         updateRing(streakVal);
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
+    function initDash() {
         renderDateLine();
         refreshDash();
-    });
+    }
+
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', initDash);
+    } else {
+        initDash();
+    }
 }
 
 // ============================================================
@@ -1300,9 +1348,11 @@ if (page === 'tasks') {
         });
     });
 
-    window.addEventListener('DOMContentLoaded', () => {
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', fetchTasks);
+    } else {
         fetchTasks();
-    });
+    }
 }
 
 // ============================================================
@@ -1348,9 +1398,6 @@ if (page === 'habits') {
     let habitsData = [];
     let editingHabitId = null;
 
-    function getLocalYYYYMMDD(dateObj = new Date()) {
-        return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
-    }
 
     async function fetchHabits() {
         if (habitContainer) habitContainer.innerHTML = `<div class="loading-state">Loading habits...</div>`;
@@ -1672,11 +1719,16 @@ if (page === 'habits') {
         renderCalendar();
     });
 
-    window.addEventListener('DOMContentLoaded', () => {
+    function initHabits() {
         fetchHabits();
         renderCalendar();
         updateStreakPanel();
-    });
+    }
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', initHabits);
+    } else {
+        initHabits();
+    }
 }
 
 // ============================================================
@@ -2542,11 +2594,16 @@ if (page === 'planner') {
     });
 
     // ── Init ──────────────────────────────────────────────────
-    window.addEventListener('DOMContentLoaded', () => {
+    function initPlanner() {
         updateHero();
         updateStats();
         fetchGoals();
-    });
+    }
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', initPlanner);
+    } else {
+        initPlanner();
+    }
 }
 
 
@@ -3201,5 +3258,9 @@ if (page === 'notifications' || page === 'alerts') {
     document.getElementById('markAllReadBtn')?.addEventListener('click', markAllAsRead);
     document.getElementById('clearAllNotifs')?.addEventListener('click', clearAllNotifications);
 
-    window.addEventListener('DOMContentLoaded', fetchNotifications);
-};
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', fetchNotifications);
+    } else {
+        fetchNotifications();
+    }
+}

@@ -432,7 +432,7 @@ function checkStreakIntegrity() {
     }
 }
 
-checkStreakIntegrity();
+// checkStreakIntegrity(); // Disabled, we now compute streak via live API
 updateStreakDisplay();
 
 // ── Page detection ────────────────────────────────────────────
@@ -1545,12 +1545,11 @@ if (page === 'habits') {
                 const idx = habitsData.findIndex(h => h.id === habit.id);
                 if (idx !== -1) {
                     habitsData[idx] = updatedHabit;
-                    const newCard = buildHabitItem(updatedHabit);
-                    card.replaceWith(newCard);
-                    updateWeeklyChart();
+                    loadHabits();
+                    renderCalendar();
                     
                     if (updatedHabit.currentstreak > streak) {
-                        pushNotification('streak', `${updatedHabit.currentstreak}-day habit streak! 🔥`, `You've kept "${updatedHabit.name}" going for ${updatedHabit.currentStreak} days straight!`);
+                        pushNotification('streak', `${updatedHabit.currentstreak}-day habit streak! 🔥`, `You've kept "${updatedHabit.name}" going for ${updatedHabit.currentstreak} days straight!`);
                     }
                 }
             } catch(err) {

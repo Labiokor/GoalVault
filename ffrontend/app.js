@@ -1138,7 +1138,7 @@ if (page === 'dashboard') {
         buildDots(Math.min(streakVal, 21));
         updateRing(streakVal);
 
-        const remaining    = freshTasks.filter(t => t.status !== 'completed').length;
+        const remaining    = freshTasks.filter(t => t.status !== 'done').length;
         const dashTasksNum = document.getElementById('dashTasksNum');
         const taskTrend    = document.getElementById('taskTrend');
         if (dashTasksNum) dashTasksNum.textContent = remaining;
@@ -1196,7 +1196,7 @@ if (page === 'dashboard') {
         const totalH = freshHabits.length;
         const doneH  = freshHabits.filter(h => h.done).length;
         const totalT = freshTasks.length;
-        const doneT  = freshTasks.filter(t => t.status === 'completed').length;
+        const doneT  = freshTasks.filter(t => t.status === 'done').length;
         const total  = totalH + totalT;
         const done   = doneH + doneT;
         const pct    = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -1217,10 +1217,30 @@ if (page === 'dashboard') {
 // TASKS PAGE
 // ============================================================
 if (page === 'tasks') {
-    const tasklist   = document.getElementById('tasklist');
-    const addTaskBtn = document.getElementById('addTaskBtn');
-    const taskinput  = document.getElementById('taskinput');
+    // ── Data helpers ──────────────────────────────────────────
+    let tasksData = [];
+    let editingTaskId = null;
     let activeFilter = 'all';
+
+    const priorityLabels = {
+        high:   { label: 'High',   class: 'priority-high' },
+        medium: { label: 'Medium', class: 'priority-medium' },
+        low:    { label: 'Low',    class: 'priority-low' }
+    };
+
+    async function fetchTasks() {
+        try {
+            const res = await apiFetch('/api/tasks');
+            if (res.data) {
+                tasksData = res.data.map(t => ({ ...t, id: t._id }));
+                renderTasks();
+            }
+        } catch (err) {
+            console.error('Failed to fetch tasks:', err);
+            const board = document.querySelector('.kanban-board');
+            if (board) board.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #ef4444; padding: 40px;">Failed to load tasks. Please try again.</div>`;
+        }
+    }
 
     function getCountdownText(deadline) {
         if (!deadline) return '';
@@ -1233,183 +1253,247 @@ if (page === 'tasks') {
     }
 
     function updateTaskProgress() {
-        const freshTasks = getTasks();
-        const totalT     = freshTasks.length;
-        const doneT      = freshTasks.filter(t => t.status === 'completed').length;
-        const taskPct    = totalT === 0 ? 0 : Math.round((doneT / totalT) * 100);
-        const taskBar    = document.getElementById('taskProgressBar');
-        const taskCount  = document.getElementById('taskProgressCount');
-        if (taskBar)   { taskBar.style.width = taskPct + '%'; taskBar.textContent = taskPct + '%'; }
+        const totalT = tasksData.length;
+        const doneT  = tasksData.filter(t => t.status === 'done').length;
+        const taskPct = totalT === 0 ? 0 : Math.round((doneT / totalT) * 100);
+        const taskBar = document.getElementById('taskProgressBar');
+        const taskCount = document.getElementById('taskProgressCount');
+        if (taskBar) {
+            taskBar.style.width = taskPct + '%';
+            taskBar.textContent = taskPct + '%';
+        }
         if (taskCount) taskCount.textContent = `${doneT} of ${totalT} completed`;
     }
 
-    function saveTasks() {
-        localStorage.setItem('tasks', JSON.stringify(tasks));
-        loadTasks();
-    }
+    function renderTasks() {
+        const todoList = document.getElementById('todo-list');
+        const doingList = document.getElementById('doing-list');
+        const doneList = document.getElementById('done-list');
 
-    function loadTasks() {
-        tasks = getTasks();
-        tasklist.innerHTML = '';
+        if (!todoList || !doingList || !doneList) return;
 
-        const filtered = activeFilter === 'all'
-            ? tasks.filter(t => t.status !== 'completed')
-            : tasks.filter(t => t.category === activeFilter && t.status !== 'completed');
+        todoList.innerHTML = '';
+        doingList.innerHTML = '';
+        doneList.innerHTML = '';
 
-        if (filtered.length === 0) {
-            tasklist.innerHTML = `
-<li style="background:transparent;border:none;box-shadow:none;
-  justify-content:center;flex-direction:column;gap:6px;padding:30px 20px;">
-  <div style="font-size:2.5rem;text-align:center;">✅</div>
-  <div style="font-size:0.95rem;font-weight:600;color:var(--text-sub);
-    text-align:center;font-family:'Poppins',sans-serif;">
-    ${activeFilter === 'all' ? 'No pending tasks!' : `No ${activeFilter} tasks!`}
-  </div>
-  <div style="font-size:0.82rem;color:var(--text-muted);text-align:center;">
-    ${activeFilter === 'all' ? 'Add a task below to get started.' : `No pending tasks in <strong>${activeFilter}</strong>.`}
-  </div>
-</li>`;
-        }
+        const filteredTasks = activeFilter === 'all' 
+            ? tasksData 
+            : tasksData.filter(t => t.category === activeFilter);
 
-        filtered.forEach(task => {
-            const realIndex = tasks.indexOf(task);
-            const li        = document.createElement('li');
-            const now       = new Date(); now.setHours(0, 0, 0, 0);
-            const isOverdue = task.deadline && new Date(task.deadline) < now;
-            if (isOverdue) li.classList.add('overdue');
-            li.classList.add(task.priority);
+        const groups = {
+            todo: filteredTasks.filter(t => t.status === 'todo'),
+            doing: filteredTasks.filter(t => t.status === 'doing'),
+            done: filteredTasks.filter(t => t.status === 'done')
+        };
 
-            const countdown      = getCountdownText(task.deadline);
-            const countdownColor = countdown.startsWith('Overdue') ? '#e74c3c' : countdown === 'Due today!' ? '#e67e22' : '#27ae60';
+        Object.keys(groups).forEach(status => {
+            const list = document.getElementById(`${status}-list`);
+            const countEl = document.querySelector(`#col-${status} .column-count`);
+            if (countEl) countEl.textContent = groups[status].length;
 
-            li.innerHTML = `
-<div class="task-check" data-index="${realIndex}">
-  <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-    <path d="M1 4L3.5 6.5L9 1" stroke="white" stroke-width="2"
-      stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>
-</div>
-<span class="task-text">${task.text}</span>
-<span class="task-category-badge ${task.category || 'general'}">${task.category || 'general'}</span>
-${countdown ? `<span class="task-countdown" style="color:${countdownColor};">${countdown}</span>` : ''}
-<select class="task-status-select status-${task.status || 'not-started'}" data-index="${realIndex}">
-  <option value="not-started" ${!task.status || task.status === 'not-started' ? 'selected' : ''}>Not Started</option>
-  <option value="in-progress" ${task.status === 'in-progress' ? 'selected' : ''}>In Progress</option>
-  <option value="completed"   ${task.status === 'completed'   ? 'selected' : ''}>Completed</option>
-</select>
-<span class="task-delete" data-index="${realIndex}"
-  style="cursor:pointer;color:#aaa;margin-left:8px;font-size:12px;">✕</span>`;
-
-            if (task.status === 'completed') li.classList.add('done');
-
-            li.querySelector('.task-check').addEventListener('click', function () {
-                const i            = +this.dataset.index;
-                const wasCompleted = tasks[i].status === 'completed';
-                tasks[i].status    = wasCompleted ? 'not-started' : 'completed';
-                if (!wasCompleted) pushNotification('task', 'Task completed! ✅', `"${tasks[i].text}" has been marked as done.`);
-                saveTasks();
-                checkDailyCompletion();
-            });
-
-            li.querySelector('.task-delete').addEventListener('click', e => {
-                e.stopPropagation();
-                confirmDelete(`Delete "${task.text}"? This cannot be undone.`, () => {
-                    pushNotification('delete', 'Task deleted', `"${task.text}" was permanently removed from your tasks.`);
-                    tasks.splice(realIndex, 1);
-                    saveTasks();
-                    checkDailyCompletion();
+            if (groups[status].length === 0) {
+                list.innerHTML = `<div class="task-empty-msg">No tasks here</div>`;
+            } else {
+                groups[status].forEach(task => {
+                    list.appendChild(buildTaskItem(task));
                 });
-            });
-
-            li.querySelector('.task-status-select').addEventListener('change', function () {
-                const idx = +this.dataset.index;
-                tasks[idx].status = this.value;
-                const statusLabels = { 'in-progress': 'In Progress', 'completed': 'Completed', 'not-started': 'Not Started' };
-                pushNotification('task', 'Task status updated', `"${tasks[idx].text}" moved to ${statusLabels[this.value]}.`);
-                saveTasks();
-                checkDailyCompletion();
-            });
-
-            tasklist.appendChild(li);
-        });
-
-        // Completed history
-        let historyList = document.getElementById('completedHistory');
-        if (!historyList) {
-            historyList = document.createElement('div');
-            historyList.id = 'completedHistory';
-            tasklist.parentElement.appendChild(historyList);
-        }
-        historyList.innerHTML = `
-<h4 style="margin:20px 0 10px;font-size:0.82rem;text-transform:uppercase;
-  letter-spacing:1px;color:#888;font-family:'JetBrains Mono',monospace;">Completed</h4>`;
-
-        const completedTasks = tasks.filter(t => t.status === 'completed');
-        if (completedTasks.length === 0) {
-            historyList.innerHTML += `<p style="font-size:0.82rem;color:#bbb;padding:8px 0;font-family:'Inter',sans-serif;">No completed tasks yet.</p>`;
-        } else {
-            completedTasks.forEach(task => {
-                historyList.innerHTML += `
-<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
-  margin-bottom:6px;background:#f0faf4;border-radius:8px;border-left:4px solid #5cb85c;">
-  <span style="color:#5cb85c;font-size:14px;">✓</span>
-  <span style="font-size:0.88rem;color:#555;text-decoration:line-through;
-    font-family:'Inter',sans-serif;">${task.text}</span>
-  <span class="task-category-badge ${task.category || 'general'}"
-    style="margin-left:auto;">${task.category || 'general'}</span>
-</div>`;
-            });
-        }
-
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', function () {
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-                activeFilter = this.getAttribute('data-filter');
-                loadTasks();
-            });
+            }
         });
 
         updateTaskProgress();
     }
 
-    addTaskBtn.addEventListener('click', () => {
-        const text     = taskinput.value.trim();
-        const deadline = document.getElementById('taskDeadline').value;
-        const priority = document.getElementById('prioritySelect').value;
-        const category = document.getElementById('categorySelect').value;
-        if (!text) return;
-        tasks.push({ text, priority, deadline, category, status: 'not-started', alerted: false, alertedFor: null });
-        pushNotification('task', 'New task added', `"${text}" was added to your ${category} tasks with ${priority} priority.`);
-        taskinput.value = '';
-        document.getElementById('taskDeadline').value = '';
-        saveTasks();
-    });
+    function buildTaskItem(task) {
+        const card = document.createElement('div');
+        card.className = `task-card ${task.priority} ${task.status === 'done' ? 'done' : ''}`;
+        card.dataset.id = task.id;
 
-    taskinput.addEventListener('keypress', e => { if (e.key === 'Enter') addTaskBtn.click(); });
+        const priorityInfo = priorityLabels[task.priority] || priorityLabels.medium;
+        const countdown = getCountdownText(task.deadline);
+        const overdueClass = countdown.startsWith('Overdue') ? 'overdue' : '';
+        
+        const desc = task.description || '';
+        const truncatedDesc = desc.length > 100 ? desc.substring(0, 100) + '...' : desc;
 
-    function checkDeadlineAlerts() {
-        const now = new Date(); now.setHours(0, 0, 0, 0);
-        let changed = false;
-        tasks.forEach(task => {
-            if (!task.deadline || task.status === 'completed') return;
-            const dueDate    = new Date(task.deadline);
-            const dueDateStr = task.deadline;
-            if (task.alertedFor && task.alertedFor !== dueDateStr) { task.alerted = false; task.alertedFor = null; changed = true; }
-            if (!task.alerted && dueDate <= now) {
-                const diff = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
-                const msg  = diff === 0 ? `📅 "${task.text}" is due TODAY!` : `⚠️ "${task.text}" is overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? '' : 's'}!`;
-                showToast(msg, diff === 0 ? 'warning' : 'error');
-                pushNotification('task', diff === 0 ? 'Task due today!' : 'Task overdue!', msg);
-                task.alerted = true; task.alertedFor = dueDateStr; changed = true;
-            }
+        let moveBtns = '';
+        if (task.status === 'todo') {
+            moveBtns = `<button class="task-btn move-doing" data-id="${task.id}">Start</button>`;
+        } else if (task.status === 'doing') {
+            moveBtns = `
+                <button class="task-btn move-todo" data-id="${task.id}">Back</button>
+                <button class="task-btn move-done" data-id="${task.id}">Finish</button>
+            `;
+        } else if (task.status === 'done') {
+            moveBtns = `<button class="task-btn move-doing" data-id="${task.id}">Reopen</button>`;
+        }
+
+        card.innerHTML = `
+            <div class="task-card-header">
+                <div class="task-card-title">${task.title}</div>
+                <div class="task-badge ${priorityInfo.class}">${priorityInfo.label}</div>
+            </div>
+            ${truncatedDesc ? `<div class="task-card-desc">${truncatedDesc}</div>` : ''}
+            <div class="task-card-meta">
+                ${task.deadline ? `<div class="task-card-deadline ${overdueClass}"><i class='bx bx-calendar'></i> ${new Date(task.deadline).toLocaleDateString()}</div>` : ''}
+                <div class="task-category-badge ${task.category || 'general'}">${task.category || 'general'}</div>
+            </div>
+            <div class="task-card-actions">
+                <div class="task-move-btns">${moveBtns}</div>
+                <div class="task-card-ctrls">
+                    <button class="task-btn edit-task" data-id="${task.id}">Edit</button>
+                    <button class="task-btn delete delete-task" data-id="${task.id}">✕</button>
+                </div>
+            </div>
+        `;
+
+        // Attach listeners
+        card.querySelector('.delete-task').addEventListener('click', (e) => {
+            e.stopPropagation();
+            confirmDelete(`Delete "${task.title}"?`, () => deleteTask(task.id));
         });
-        if (changed) localStorage.setItem('tasks', JSON.stringify(tasks));
+        
+        card.querySelector('.edit-task').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openEditTask(task);
+        });
+        
+        if (task.status === 'todo') {
+            card.querySelector('.move-doing').addEventListener('click', () => updateTaskStatus(task.id, 'doing'));
+        } else if (task.status === 'doing') {
+            card.querySelector('.move-todo').addEventListener('click', () => updateTaskStatus(task.id, 'todo'));
+            card.querySelector('.move-done').addEventListener('click', () => updateTaskStatus(task.id, 'done'));
+        } else if (task.status === 'done') {
+            card.querySelector('.move-doing').addEventListener('click', () => updateTaskStatus(task.id, 'doing'));
+        }
+
+        return card;
     }
 
-    loadTasks();
-    checkDeadlineAlerts();
-    setInterval(checkDeadlineAlerts, 60000);
+    async function updateTaskStatus(id, newStatus) {
+        try {
+            const task = tasksData.find(t => t.id === id);
+            if (!task) return;
+
+            const res = await apiFetch(`/api/tasks/${id}`, {
+                method: 'PUT',
+                body: { ...task, status: newStatus }
+            });
+
+            if (res.success) {
+                const updatedTask = { ...res.data, id: res.data._id };
+                const idx = tasksData.findIndex(t => t.id === id);
+                if (idx !== -1) tasksData[idx] = updatedTask;
+                
+                if (newStatus === 'done') {
+                    pushNotification('task', 'Task completed! ✅', `"${updatedTask.title}" has been moved to Done.`);
+                }
+                
+                renderTasks();
+            }
+        } catch (err) {
+            console.error('Failed to update task status:', err);
+            showToast('Failed to update status', 'error');
+        }
+    }
+
+    async function deleteTask(id) {
+        try {
+            const res = await apiFetch(`/api/tasks/${id}`, { method: 'DELETE' });
+            if (res.success) {
+                tasksData = tasksData.filter(t => t.id !== id);
+                renderTasks();
+                pushNotification('delete', 'Task deleted', 'Task has been removed.');
+            }
+        } catch (err) {
+            console.error('Failed to delete task:', err);
+            showToast('Failed to delete task', 'error');
+        }
+    }
+
+    function openEditTask(task) {
+        editingTaskId = task.id;
+        document.getElementById('taskinput').value = task.title;
+        document.getElementById('prioritySelect').value = task.priority;
+        document.getElementById('categorySelect').value = task.category || 'general';
+        document.getElementById('taskDeadline').value = task.deadline ? task.deadline.split('T')[0] : '';
+        
+        const addBtn = document.getElementById('addTaskBtn');
+        if (addBtn) addBtn.textContent = 'Update Task';
+        
+        document.getElementById('taskinput').focus();
+        document.getElementById('taskinput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    const addTaskBtn = document.getElementById('addTaskBtn');
+    const taskinput = document.getElementById('taskinput');
+
+    if (addTaskBtn) {
+        addTaskBtn.addEventListener('click', async () => {
+            const title = taskinput.value.trim();
+            const priority = document.getElementById('prioritySelect').value;
+            const category = document.getElementById('categorySelect').value;
+            const deadline = document.getElementById('taskDeadline').value;
+            const errEl = document.getElementById('taskInputError');
+
+            if (!title) {
+                if (errEl) errEl.style.display = 'block';
+                return;
+            }
+            if (errEl) errEl.style.display = 'none';
+
+            try {
+                if (editingTaskId) {
+                    const task = tasksData.find(t => t.id === editingTaskId);
+                    const res = await apiFetch(`/api/tasks/${editingTaskId}`, {
+                        method: 'PUT',
+                        body: { ...task, title, priority, category, deadline }
+                    });
+                    if (res.success) {
+                        const updated = { ...res.data, id: res.data._id };
+                        const idx = tasksData.findIndex(t => t.id === editingTaskId);
+                        if (idx !== -1) tasksData[idx] = updated;
+                        editingTaskId = null;
+                        addTaskBtn.textContent = 'Add Task';
+                        pushNotification('task', 'Task updated', `"${title}" has been updated.`);
+                    }
+                } else {
+                    const res = await apiFetch('/api/tasks', {
+                        method: 'POST',
+                        body: { title, priority, category, deadline, status: 'todo' }
+                    });
+                    if (res.success) {
+                        const newTask = { ...res.data, id: res.data._id };
+                        tasksData.unshift(newTask);
+                        pushNotification('task', 'New task added', `"${title}" was added to your list.`);
+                    }
+                }
+                
+                taskinput.value = '';
+                document.getElementById('taskDeadline').value = '';
+                renderTasks();
+            } catch (err) {
+                console.error('Failed to save task:', err);
+                showToast('Failed to save task', 'error');
+            }
+        });
+    }
+
+    if (taskinput) {
+        taskinput.addEventListener('keypress', e => { if (e.key === 'Enter') addTaskBtn.click(); });
+    }
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            activeFilter = this.getAttribute('data-filter');
+            renderTasks();
+        });
+    });
+
+    window.addEventListener('DOMContentLoaded', () => {
+        fetchTasks();
+    });
 }
 
 // ============================================================

@@ -2567,9 +2567,50 @@ li.done .task-check svg { opacity: 1; }
 }
 .notes-item:hover .notes-item-del { opacity: 1; }
 .notes-item-del:hover {
-  color: #ef4444;
-  background: #fee2e2;
-  transform: translateY(-50%);
+    background: #fee2e2;
+    color: #ef4444;
+}
+
+/* Notebook Enhancements */
+.notes-item.pinned {
+    background: rgba(124, 58, 237, 0.05);
+    border-left: 3px solid var(--accent);
+}
+.note-category-badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: 600;
+    display: inline-block;
+}
+.note-category-badge.cat-personal { background: #d1fae5; color: #065f46; }
+.note-category-badge.cat-work { background: #dbeafe; color: #1e40af; }
+.note-category-badge.cat-study { background: #fef3c7; color: #92400e; }
+.note-category-badge.cat-ideas { background: #f3e8ff; color: #6b21a8; }
+
+.note-tag-chip {
+    font-size: 10px;
+    background: var(--surface-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text-sub);
+}
+
+.notes-date-group-label i {
+    margin-right: 6px;
+    color: var(--accent);
+}
+
+.notes-empty-msg {
+    text-align: center;
+    padding: 30px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-family: inherit;
+}
+
+.notes-toolbar-btn.active {
+    color: var(--accent) !important;
 }
 
 .notes-sidebar-footer {

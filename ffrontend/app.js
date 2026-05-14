@@ -2612,6 +2612,7 @@ if (page === 'planner') {
         const noteErr  = document.getElementById('updateNoteError');
         const curFill  = document.getElementById('updateCurrentFill');
         const curPct   = document.getElementById('updateCurrentPct');
+
         const newPctEl = document.getElementById('updateNewPct');
         const lockedNote = document.getElementById('updateLockedNote');
         const minNote    = document.getElementById('updateMinNote');
@@ -2751,191 +2752,322 @@ if (page === 'notebook') {
         const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
         const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
-        let notes        = JSON.parse(localStorage.getItem('appNotes') || '[]');
-        let activeId     = null;
-        let activeFilter = 'all';
-        let searchQuery  = '';
-        let nextId       = notes.length ? Math.max(...notes.map(n => n.id)) + 1 : 1;
+        let notesData = [];
+        let activeNoteId = null;
+        let activeNoteCategory = 'all';
+        let searchQuery = '';
+        let pinInFlight = false;
 
-        function saveNotes() { localStorage.setItem('appNotes', JSON.stringify(notes)); }
+        const categoryLabels = {
+            personal: 'Personal',
+            work: 'Work',
+            study: 'Study',
+            ideas: 'Ideas'
+        };
 
-        function escHtml(s) {
-            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        async function fetchNotes() {
+            try {
+                const res = await apiFetch('/api/notes');
+                if (res.data) {
+                    notesData = res.data.map(n => ({ ...n, id: n._id }));
+                    renderNotes();
+                }
+            } catch (err) {
+                console.error('Failed to fetch notes:', err);
+                showToast('Failed to load notes', 'error');
+            }
         }
 
         function formatShortDate(d) {
             d = new Date(d);
-            const now     = new Date();
-            const today   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const noteDay = new Date(d.getFullYear(),   d.getMonth(),   d.getDate());
-            const diff    = Math.round((today - noteDay) / 86400000);
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const noteDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const diff = Math.round((today - noteDay) / 86400000);
             if (diff === 0) return d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
             if (diff === 1) return 'Yesterday';
-            if (diff < 7)  return DAYS[d.getDay()];
+            if (diff < 7) return DAYS[d.getDay()];
             return `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
         }
 
         function groupLabel(d) {
             d = new Date(d);
-            const now     = new Date();
-            const today   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const noteDay = new Date(d.getFullYear(),   d.getMonth(),   d.getDate());
-            const diff    = Math.round((today - noteDay) / 86400000);
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const noteDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const diff = Math.round((today - noteDay) / 86400000);
             if (diff === 0) return 'Today';
-            if (diff <= 6)  return 'This Week';
+            if (diff <= 6) return 'This Week';
             if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) return 'This Month';
             if (d.getFullYear() === now.getFullYear()) return MONTHS[d.getMonth()];
             return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
         }
 
-        function filteredNotes() {
-            return notes
-                .filter(n => activeFilter === 'all' || n.category === activeFilter)
-                .filter(n => !searchQuery || n.title.toLowerCase().includes(searchQuery) || n.body.toLowerCase().includes(searchQuery))
-                .sort((a, b) => new Date(b.date) - new Date(a.date));
-        }
-
-        function renderList() {
+        function renderNotes() {
             const list = document.getElementById('notesList');
             if (!list) return;
-            const fn = filteredNotes();
-            if (!fn.length) {
+
+            // Filter
+            let filtered = activeNoteCategory === 'all'
+                ? notesData
+                : notesData.filter(n => n.category === activeNoteCategory);
+
+            // Search
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                filtered = filtered.filter(n => 
+                    (n.title && n.title.toLowerCase().includes(q)) || 
+                    (n.content && n.content.toLowerCase().includes(q))
+                );
+            }
+
+            // Sort: Pinned first, then date descending
+            filtered.sort((a, b) => {
+                if (a.pinned !== b.pinned) return b.pinned ? 1 : -1;
+                return new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt);
+            });
+
+            if (filtered.length === 0) {
                 list.innerHTML = `<div style="text-align:center;padding:30px 16px;font-size:12px;color:#aaa;font-family:'Inter',sans-serif;">No notes found</div>`;
                 return;
             }
-            let html = '', lastGroup = null;
-            fn.forEach(n => {
-                const g = groupLabel(n.date);
-                if (g !== lastGroup) { html += `<div class="notes-date-group-label">${g}</div>`; lastGroup = g; }
-                html += `
-<div class="notes-item${n.id === activeId ? ' active' : ''}" data-id="${n.id}">
-  <div class="notes-item-title">${escHtml(n.title || 'New Note')}</div>
-  <div class="notes-item-preview">
-    <span class="notes-item-date">${formatShortDate(n.date)}</span>
-    <span class="notes-item-snippet">${escHtml(n.body.slice(0,60))}</span>
-  </div>
-  <button class="notes-item-del" data-del="${n.id}" title="Delete">×</button>
-</div>`;
+
+            list.innerHTML = '';
+            let lastGroup = null;
+
+            filtered.forEach(note => {
+                const g = groupLabel(note.updatedAt || note.createdAt);
+                if (!note.pinned && g !== lastGroup) {
+                    const label = document.createElement('div');
+                    label.className = 'notes-date-group-label';
+                    label.textContent = g;
+                    list.appendChild(label);
+                    lastGroup = g;
+                } else if (note.pinned && lastGroup !== 'Pinned') {
+                    const label = document.createElement('div');
+                    label.className = 'notes-date-group-label';
+                    label.innerHTML = '<i class="fa-solid fa-thumbtack"></i> Pinned';
+                    list.appendChild(label);
+                    lastGroup = 'Pinned';
+                }
+
+                list.appendChild(buildNoteItem(note));
             });
-            list.innerHTML = html;
-            list.querySelectorAll('.notes-item').forEach(el => {
-                el.addEventListener('click', function (e) {
-                    if (e.target.closest('[data-del]')) return;
-                    selectNote(+this.dataset.id);
-                });
+        }
+
+        function buildNoteItem(note) {
+            const item = document.createElement('div');
+            item.className = `notes-item ${note.id === activeNoteId ? 'active' : ''} ${note.pinned ? 'pinned' : ''}`;
+            item.dataset.id = note.id;
+
+            const snippet = (note.content || '').replace(/\n/g, ' ').substring(0, 150);
+            const tagsHtml = (note.tags && note.tags.length) 
+                ? `<div class="note-tags-list" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">${note.tags.map(t => `<span class="note-tag-chip" style="font-size:10px;background:var(--surface-2);padding:2px 6px;border-radius:4px;color:var(--text-sub);">#${t}</span>`).join('')}</div>`
+                : '';
+
+            item.innerHTML = `
+                <div class="notes-item-header" style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div class="notes-item-title" style="font-weight:600;font-size:0.9rem;color:var(--text-primary);">${note.title || 'Untitled'}</div>
+                    <button class="notes-item-del" data-id="${note.id}" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:16px;">×</button>
+                </div>
+                <div class="notes-item-preview" style="font-size:0.8rem;color:var(--text-sub);margin-top:4px;">
+                    <span class="notes-item-date" style="color:var(--accent);margin-right:6px;">${formatShortDate(note.updatedAt || note.createdAt)}</span>
+                    <span class="notes-item-snippet">${snippet}${snippet.length >= 150 ? '...' : ''}</span>
+                </div>
+                <div class="notes-item-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                    <span class="note-category-badge cat-${note.category}" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">${categoryLabels[note.category] || note.category}</span>
+                    ${tagsHtml}
+                </div>
+            `;
+
+            item.addEventListener('click', (e) => {
+                if (e.target.classList.contains('notes-item-del')) return;
+                selectNote(note.id);
             });
-            list.querySelectorAll('[data-del]').forEach(el => {
-                el.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    deleteNote(+this.dataset.del);
-                });
+
+            item.querySelector('.notes-item-del').addEventListener('click', (e) => {
+                e.stopPropagation();
+                confirmDelete(`Delete "${note.title || 'Untitled'}"?`, () => deleteNote(note.id));
             });
+
+            return item;
         }
 
         function selectNote(id) {
-            activeId = id;
-            const note = notes.find(n => n.id === id);
+            activeNoteId = id;
+            const note = notesData.find(n => n.id === id);
             if (!note) return;
-            document.getElementById('notesEmptyState').style.display    = 'none';
+
+            document.getElementById('notesEmptyState').style.display = 'none';
             document.getElementById('notesEditorContent').style.display = 'flex';
-            document.getElementById('noteTitleInput').value     = note.title;
-            document.getElementById('noteBodyInput').value      = note.body;
-            document.getElementById('noteCategorySelect').value = note.category;
-            const d = new Date(note.date);
+            
+            document.getElementById('noteTitleInput').value = note.title || '';
+            document.getElementById('noteBodyInput').value = note.content || '';
+            document.getElementById('noteCategorySelect').value = note.category || 'personal';
+            document.getElementById('noteTagsInput').value = (note.tags || []).join(', ');
+            
+            const pinBtn = document.getElementById('notesPinBtn');
+            if (pinBtn) {
+                pinBtn.classList.toggle('active', !!note.pinned);
+                pinBtn.style.color = note.pinned ? 'var(--accent)' : 'inherit';
+            }
+
+            const d = new Date(note.updatedAt || note.createdAt);
             document.getElementById('notesEditorMeta').textContent =
                 `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ` +
                 d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-            renderList();
+            
+            renderNotes();
         }
 
-        function deleteNote(id) {
-            const note  = notes.find(n => n.id === id);
-            const title = note?.title?.trim() || 'Untitled note';
-            confirmDelete(`Delete "${title}"? This cannot be undone.`, () => {
-                pushNotification('delete', 'Note deleted', `"${title}" has been permanently deleted from your notebook.`);
-                notes = notes.filter(n => n.id !== id);
-                saveNotes();
-                if (activeId === id) {
-                    activeId = null;
-                    document.getElementById('notesEmptyState').style.display   = 'flex';
-                    document.getElementById('notesEditorContent').style.display = 'none';
-                }
-                renderList();
-            });
-        }
+        async function saveActive() {
+            if (!activeNoteId) return;
 
-        function saveActive() {
-            const note = notes.find(n => n.id === activeId);
-            if (!note) return;
-            const oldTitle = note.title;
-            note.title    = document.getElementById('noteTitleInput').value;
-            note.body     = document.getElementById('noteBodyInput').value;
-            note.category = document.getElementById('noteCategorySelect').value;
-            note.date     = new Date().toISOString();
-            saveNotes();
-            if (!oldTitle && note.title) {
-                pushNotification('note', 'Note saved 📓', `"${note.title}" saved to your ${note.category} notes.`);
+            const title = document.getElementById('noteTitleInput').value.trim();
+            const content = document.getElementById('noteBodyInput').value;
+            const category = document.getElementById('noteCategorySelect').value;
+            const tagsRaw = document.getElementById('noteTagsInput').value;
+            const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t) : [];
+
+            if (!title) {
+                showToast('Title is required', 'warning');
+                return;
             }
-            renderList();
+
+            try {
+                const res = await apiFetch(`/api/notes/${activeNoteId}`, {
+                    method: 'PUT',
+                    body: { title, content, category, tags }
+                });
+
+                if (res.success) {
+                    const updatedNote = { ...res.data, id: res.data._id };
+                    const idx = notesData.findIndex(n => n.id === activeNoteId);
+                    if (idx !== -1) notesData[idx] = updatedNote;
+                    
+                    showToast('Note saved ✓', 'success');
+                    renderNotes();
+                }
+            } catch (err) {
+                console.error('Failed to save note:', err);
+                showToast('Failed to save note', 'error');
+            }
         }
 
-        function newNote() {
-            const n = {
-                id: nextId++, title: '', body: '',
-                category: activeFilter === 'all' ? 'general' : activeFilter,
-                date: new Date().toISOString(),
-            };
-            notes.unshift(n);
-            saveNotes();
-            pushNotification('note', 'New note created 📝', 'A new note has been created. Start writing your thoughts!');
-            selectNote(n.id);
-            document.getElementById('noteTitleInput').focus();
+        async function newNote() {
+            try {
+                const res = await apiFetch('/api/notes', {
+                    method: 'POST',
+                    body: {
+                        title: 'Untitled Note',
+                        content: '',
+                        category: activeNoteCategory === 'all' ? 'personal' : activeNoteCategory,
+                        tags: []
+                    }
+                });
+
+                if (res.success) {
+                    const note = { ...res.data, id: res.data._id };
+                    notesData.unshift(note);
+                    renderNotes();
+                    selectNote(note.id);
+                    document.getElementById('noteTitleInput').focus();
+                    pushNotification('note', 'New note created 📝', 'Start writing your thoughts!');
+                }
+            } catch (err) {
+                console.error('Failed to create note:', err);
+                showToast('Failed to create note', 'error');
+            }
+        }
+
+        async function deleteNote(id) {
+            try {
+                const res = await apiFetch(`/api/notes/${id}`, { method: 'DELETE' });
+                if (res.success) {
+                    notesData = notesData.filter(n => n.id !== id);
+                    if (activeNoteId === id) {
+                        activeNoteId = null;
+                        document.getElementById('notesEmptyState').style.display = 'flex';
+                        document.getElementById('notesEditorContent').style.display = 'none';
+                    }
+                    renderNotes();
+                    pushNotification('delete', 'Note deleted', 'Note has been removed.');
+                }
+            } catch (err) {
+                console.error('Failed to delete note:', err);
+                showToast('Failed to delete note', 'error');
+            }
+        }
+
+        async function togglePin() {
+            if (!activeNoteId || pinInFlight) return;
+
+            pinInFlight = true;
+            try {
+                const res = await apiFetch(`/api/notes/${activeNoteId}/pin`, { method: 'PUT' });
+                if (res.success) {
+                    const updatedNote = { ...res.data, id: res.data._id };
+                    const idx = notesData.findIndex(n => n.id === activeNoteId);
+                    if (idx !== -1) notesData[idx] = updatedNote;
+                    
+                    const pinBtn = document.getElementById('notesPinBtn');
+                    if (pinBtn) {
+                        pinBtn.classList.toggle('active', !!updatedNote.pinned);
+                        pinBtn.style.color = updatedNote.pinned ? 'var(--accent)' : 'inherit';
+                    }
+                    
+                    renderNotes();
+                }
+            } catch (err) {
+                console.error('Failed to toggle pin:', err);
+                showToast('Failed to toggle pin', 'error');
+            } finally {
+                pinInFlight = false;
+            }
         }
 
         function initNotes() {
-            const newBtn         = document.getElementById('newNoteBtn');
-            const newBtnAlt      = document.getElementById('newNoteBtnAlt');
-            const saveBtn        = document.getElementById('notesSaveBtn');
-            const delBtn         = document.getElementById('notesDeleteBtn');
-            const tabs           = document.getElementById('notesCategoryTabs');
-            const search         = document.getElementById('noteSearchInput');
-            const titleInput     = document.getElementById('noteTitleInput');
-            const bodyInput      = document.getElementById('noteBodyInput');
+            const newBtn = document.getElementById('newNoteBtn');
+            const newBtnAlt = document.getElementById('newNoteBtnAlt');
+            const saveBtn = document.getElementById('notesSaveBtn');
+            const delBtn = document.getElementById('notesDeleteBtn');
+            const pinBtn = document.getElementById('notesPinBtn');
+            const tabs = document.getElementById('notesCategoryTabs');
+            const search = document.getElementById('noteSearchInput');
             const categorySelect = document.getElementById('noteCategorySelect');
+
             if (!newBtn) return;
 
             newBtn.addEventListener('click', newNote);
             if (newBtnAlt) newBtnAlt.addEventListener('click', newNote);
             saveBtn.addEventListener('click', saveActive);
-            delBtn.addEventListener('click', () => { if (activeId) deleteNote(activeId); });
+            delBtn.addEventListener('click', () => { if (activeNoteId) deleteNote(activeNoteId); });
+            if (pinBtn) pinBtn.addEventListener('click', togglePin);
+            
             if (categorySelect) categorySelect.addEventListener('change', saveActive);
 
-            tabs.querySelectorAll('.notes-cat-tab').forEach(btn => {
-                btn.addEventListener('click', function () {
-                    tabs.querySelectorAll('.notes-cat-tab').forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    activeFilter = this.dataset.filter;
-                    renderList();
+            if (tabs) {
+                tabs.querySelectorAll('.notes-cat-tab').forEach(btn => {
+                    btn.addEventListener('click', function () {
+                        tabs.querySelectorAll('.notes-cat-tab').forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
+                        activeNoteCategory = this.dataset.filter;
+                        renderNotes();
+                    });
                 });
-            });
+            }
 
-            search.addEventListener('input', function () {
-                searchQuery = this.value.toLowerCase();
-                renderList();
-            });
+            if (search) {
+                search.addEventListener('input', (e) => {
+                    searchQuery = e.target.value;
+                    renderNotes();
+                });
+            }
 
-            let autoSave;
-            titleInput.addEventListener('input', () => { clearTimeout(autoSave); autoSave = setTimeout(saveActive, 800); });
-            bodyInput.addEventListener('input',  () => { clearTimeout(autoSave); autoSave = setTimeout(saveActive, 800); });
-
-            renderList();
+            fetchNotes();
         }
 
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initNotes);
-        } else {
-            initNotes();
-        }
+        initNotes();
     })();
 }
 

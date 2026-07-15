@@ -23,7 +23,13 @@ const GoalSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'completed', 'paused'],
     default: 'active'
-  }
+  },
+  type: { type: String, enum: ['short', 'long'], default: 'long' },
+  day: { type: String, default: '' },
+  priority: { type: String, enum: ['low', 'medium', 'high'], default: 'low' },
+  hasReminder: { type: Boolean, default: false },
+  reminderFreq: { type: String, default: null },
+  progressLog: { type: Array, default: [] }
 }, { timestamps: true })  // ✅ handles createdAt and updatedAt automatically
 
 module.exports = mongoose.model('Goal', GoalSchema)

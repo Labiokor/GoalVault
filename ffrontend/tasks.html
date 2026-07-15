@@ -52,7 +52,7 @@
             </a>
         </div>
         <div class="nav-item" style="position:relative;">
-            <a href="notifications.html" style="position:relative;">
+            <a href="alerts.html" style="position:relative;">
                 <i class="fa-solid fa-bell"></i>
                 <span class="notif-nav-badge" id="notifNavBadge"></span>
                 Alerts
@@ -89,22 +89,50 @@
                 <button class="filter-btn" data-filter="personal">Personal</button>
                 <button class="filter-btn" data-filter="school">School</button>
             </div>
-            <ul id="tasklist"></ul>
+            <div class="kanban-board">
+                <div class="kanban-column" id="col-todo">
+                    <div class="column-header">
+                        <h3>To Do</h3>
+                        <span class="column-count">0</span>
+                    </div>
+                    <div class="task-list" id="todo-list"></div>
+                </div>
+                <div class="kanban-column" id="col-doing">
+                    <div class="column-header">
+                        <h3>Doing</h3>
+                        <span class="column-count">0</span>
+                    </div>
+                    <div class="task-list" id="doing-list"></div>
+                </div>
+                <div class="kanban-column" id="col-done">
+                    <div class="column-header">
+                        <h3>Done</h3>
+                        <span class="column-count">0</span>
+                    </div>
+                    <div class="task-list" id="done-list"></div>
+                </div>
+            </div>
+
             <div class="task-input-area">
-                <input type="text" id="taskinput" placeholder="Add a task...">
-                <select id="prioritySelect">
-                    <option value="low">low</option>
-                    <option value="medium">medium</option>
-                    <option value="high">high</option>
-                </select>
-                <select id="categorySelect">
-                    <option value="general">general</option>
-                    <option value="work">work</option>
-                    <option value="personal">personal</option>
-                    <option value="school">school</option>
-                </select>
-                <input type="date" id="taskDeadline">
-                <button id="addTaskBtn">Add</button>
+                <div class="input-row">
+                    <input type="text" id="taskinput" placeholder="What needs to be done?">
+                    <button id="addTaskBtn">Add Task</button>
+                </div>
+                <div class="input-row secondary">
+                    <select id="prioritySelect">
+                        <option value="low">Low Priority</option>
+                        <option value="medium" selected>Medium Priority</option>
+                        <option value="high">High Priority</option>
+                    </select>
+                    <select id="categorySelect">
+                        <option value="general">General</option>
+                        <option value="work">Work</option>
+                        <option value="personal">Personal</option>
+                        <option value="school">School</option>
+                    </select>
+                    <input type="date" id="taskDeadline">
+                </div>
+                <div id="taskInputError" style="color: #ef4444; font-size: 13px; margin-top: 8px; display: none;">Task title is required.</div>
             </div>
         </div>
     </div>

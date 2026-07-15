@@ -52,7 +52,7 @@
         </a>
     </div>
     <div class="nav-item" style="position:relative;">
-        <a href="notifications.html" style="position:relative;">
+        <a href="alerts.html" style="position:relative;">
             <i class="fa-solid fa-bell"></i>
             <span class="notif-nav-badge" id="notifNavBadge"></span>
             Alerts
@@ -82,10 +82,16 @@
                     <span class="habits-label">Active Habits</span>
                     <span class="pending-badge" id="pendingBadge">0 PENDING TODAY</span>
                 </div>
-                <div class="habit-input-row">
-                    <input type="text" id="habitInput" placeholder="Add a new habit…">
+                <div class="habit-input-row" style="display: flex; gap: 8px;">
+                    <input type="text" id="habitInput" placeholder="Add a new habit…" style="flex: 1;">
+                    <select id="habitFreqInput" style="padding: 10px; border: 1px solid #ddd; border-radius: 8px; font-family: 'Inter', sans-serif;">
+                        <option value="daily">Daily</option>
+                        <option value="weekdays">Weekdays</option>
+                        <option value="weekends">Weekends</option>
+                    </select>
                     <button id="addHabitBtn">+</button>
                 </div>
+                <div id="habitInputError" style="color: #ef4444; font-size: 13px; margin-bottom: 15px; display: none;">Name and frequency are required.</div>
                 <div class="habit-container" id="habitContainer"></div>
             </div>
             <div class="right">

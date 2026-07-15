@@ -108,3 +108,13 @@ exports.login = async (req, res) => {
     error(res, err.message, 500)
   }
 }
+
+exports.getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select('-password')
+    if (!user) return error(res, 'User not found', 404)
+    success(res, { id: user._id, name: user.name, email: user.email }, 'User profile retrieved')
+  } catch (err) {
+    error(res, err.message, 500)
+  }
+}

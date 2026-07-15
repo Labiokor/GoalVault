@@ -2,11 +2,57 @@
 // GOAL VAULT — app.js  (unified — all pages)
 // ============================================================
 
-// ── Auth guard ───────────────────────────────────────────────
-const user = localStorage.getItem('hubUser') || sessionStorage.getItem('hubUser');
-if (!user && !window.location.pathname.includes('login')) {
-    window.location.href = 'login.html';
+const API_BASE = 'http://localhost:5000';
+
+async function apiFetch(path, options = {}) {
+    const token = localStorage.getItem('gv_token');
+    const headers = { ...options.headers };
+    
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (options.body && !(options.body instanceof FormData) && typeof options.body !== 'string') {
+        headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(options.body);
+    }
+    
+    try {
+        const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
+        const data = await res.json().catch(() => ({}));
+        
+        if (res.status === 401) {
+            localStorage.removeItem('gv_token');
+            localStorage.removeItem('gv_user_name');
+            window.location.href = 'login.html';
+            return Promise.reject(data);
+        }
+        
+        if (!res.ok) return Promise.reject(data);
+        return data;
+    } catch (err) {
+        console.error('Network or server error:', err);
+        return Promise.reject({ message: 'Network error or server unreachable.' });
+    }
 }
+
+// ── Auth guard ───────────────────────────────────────────────
+const gv_token = localStorage.getItem('gv_token');
+if (!gv_token && !window.location.pathname.includes('login.html')) {
+    window.location.href = 'login.html';
+} else if (gv_token && !window.location.pathname.includes('login.html')) {
+    apiFetch('/api/auth/me')
+        .then(res => {
+            const userName = res.data?.name || res.user?.name;
+            if (userName) {
+                localStorage.setItem('gv_user_name', userName);
+                const display = document.getElementById('usernameDisplay');
+                if (display) display.textContent = userName;
+            }
+            updateNotifBadge();
+        })
+        .catch(() => {}); // 401 handles redirect automatically
+}
+
+let unreadCount = 0;
+let notificationsData = [];
 
 // ============================================================
 // NOTIFICATION ENGINE
@@ -22,49 +68,47 @@ const NOTIF_TYPES = {
     goal:     { icon: '🎯', label: 'Goal'     },
 };
 
-function getNotifications() {
-    return JSON.parse(localStorage.getItem('appNotifications') || '[]');
-}
-function saveNotifications(notifs) {
-    localStorage.setItem('appNotifications', JSON.stringify(notifs));
-}
-function pushNotification(type, title, body) {
-    const notifs = getNotifications();
-    const notif  = {
-        id:   Date.now() + Math.random(),
-        type, title, body,
-        date: new Date().toISOString(),
-        read: false,
-    };
-    const recent = notifs.find(n =>
-        n.type === type && n.title === title &&
-        (Date.now() - new Date(n.date).getTime()) < 3000
-    );
-    if (recent) return;
-    notifs.unshift(notif);
-    if (notifs.length > 100) notifs.splice(100);
-    saveNotifications(notifs);
-    updateNotifBadge();
-}
-function markAllNotifsRead() {
-    const notifs = getNotifications().map(n => ({ ...n, read: true }));
-    saveNotifications(notifs);
-    updateNotifBadge();
-}
-function updateNotifBadge() {
-    const unread = getNotifications().filter(n => !n.read).length;
-    const badge  = document.getElementById('notifNavBadge');
-    if (badge) badge.classList.toggle('visible', unread > 0);
-}
-function formatNotifTime(dateStr) {
-    const now  = new Date();
-    const then = new Date(dateStr);
+function getRelativeTime(dateString) {
+    const now = new Date();
+    const then = new Date(dateString);
+    if (isNaN(then)) return '';
     const diff = Math.round((now - then) / 1000);
-    if (diff < 60)        return 'Just now';
-    if (diff < 3600)      return `${Math.floor(diff / 60)}m ago`;
-    if (diff < 86400)     return `${Math.floor(diff / 3600)}h ago`;
-    if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
+    
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (then.toDateString() === yesterday.toDateString()) return 'Yesterday';
+    
     return then.toLocaleDateString('default', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function pushNotification(type, title, body) {
+    // Frontend-only visual feedback via toast
+    const icon = NOTIF_TYPES[type]?.icon || '🔔';
+    showToast(`${icon} ${title}: ${body}`, 'info');
+}
+
+async function updateNotifBadge() {
+    try {
+        const res = await apiFetch('/api/notification/unread');
+        const unreadNotifs = res.data || [];
+        unreadCount = unreadNotifs.length;
+        
+        const badge = document.getElementById('notifNavBadge');
+        if (badge) {
+            if (unreadCount > 0) {
+                badge.textContent = unreadCount > 99 ? '99+' : unreadCount;
+                badge.classList.add('visible');
+            } else {
+                badge.classList.remove('visible');
+            }
+        }
+    } catch (err) {
+        console.error('Failed to update notif badge:', err);
+    }
 }
 function notifGroupLabel(dateStr) {
     const now     = new Date();
@@ -79,10 +123,73 @@ function notifGroupLabel(dateStr) {
     return 'Older';
 }
 
-window.addEventListener('DOMContentLoaded', () => {
+function getLocalYYYYMMDD(dateObj = new Date()) {
+    return `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Derives the current daily streak from live habit API data.
+ * A day "counts" if at least one habit was completed on it.
+ * Walks backwards from today until it finds a gap.
+ */
+function computeStreakFromHabits(habitsArray) {
+    if (!habitsArray || habitsArray.length === 0) return 0;
+
+    // Build a Set of all dates that had at least 1 completion
+    const activeDays = new Set();
+    habitsArray.forEach(h => {
+        (h.completedDates || []).forEach(d => {
+            activeDays.add(getLocalYYYYMMDD(new Date(d)));
+        });
+    });
+
+    let count = 0;
+    const today = new Date();
+    for (let i = 0; i <= 365; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() - i);
+        const dateStr = getLocalYYYYMMDD(d);
+        if (activeDays.has(dateStr)) {
+            count++;
+        } else {
+            // Allow today to be incomplete without breaking streak
+            if (i === 0) continue;
+            break;
+        }
+    }
+    return count;
+}
+
+/**
+ * Fetches habits from the API on every page load (silently)
+ * and updates the global streak + nav icon so all pages stay in sync.
+ */
+async function syncStreakGlobally() {
+    try {
+        const token = localStorage.getItem('gv_token');
+        if (!token) return; // not logged in yet
+        const res = await apiFetch('/api/habits');
+        if (res && res.data) {
+            const computed = computeStreakFromHabits(res.data);
+            streak = computed;
+            localStorage.setItem('streak', computed);
+            updateStreakDisplay();
+        }
+    } catch (e) {
+        // Silently fail — streak stays at last cached value
+    }
+}
+
+function initGlobals() {
     updateNotifBadge();
     autoSetNavActive();
-});
+    syncStreakGlobally(); // keep streak in sync on every page
+}
+if (document.readyState === 'loading') {
+    window.addEventListener('DOMContentLoaded', initGlobals);
+} else {
+    initGlobals();
+}
 
 // ── Auto nav active state ─────────────────────────────────────
 function autoSetNavActive() {
@@ -229,6 +336,8 @@ function logoutUser() {
     confirmDelete(
         'Are you sure you want to log out?',
         () => {
+            localStorage.removeItem('gv_token');
+            localStorage.removeItem('gv_user_name');
             localStorage.removeItem('hubUser');
             localStorage.removeItem('hubEmail');
             sessionStorage.removeItem('hubUser');
@@ -344,7 +453,7 @@ function checkStreakIntegrity() {
     }
 }
 
-checkStreakIntegrity();
+// checkStreakIntegrity(); // Disabled, we now compute streak via live API
 updateStreakDisplay();
 
 // ── Page detection ────────────────────────────────────────────
@@ -357,6 +466,7 @@ const page = (() => {
     if (p === 'notebook.html')            return 'notebook';
     if (p === 'account.html')             return 'account';
     if (p === 'notifications.html')       return 'notifications';
+    if (p === 'alerts.html')              return 'alerts';
     if (p === 'reminders.html')           return 'reminders';
     return 'dashboard';
 })();
@@ -386,649 +496,408 @@ function checkDailyCompletion() {
 // REMINDERS PAGE
 // ============================================================
 if (page === 'reminders') {
+    (function () {
+        let remindersData = [];
+        let editingReminderId = null;
+        let snoozeTargetId = null;
+        let currentCat = 'personal';
+        let currentFreq = 'once';
+        let currentColor = '#7c3aed';
 
-    // ── State ─────────────────────────────────────────────────
-    let currentTab    = 'upcoming';
-    let currentSort   = 'soonest';
-    let currentCat    = 'personal';
-    let currentColor  = '#7c3aed';
-    let currentFreq   = 'once';
-    let editingId     = null;
-    let snoozeTargetId = null;
+        const CAT_CONFIG = {
+            personal: { icon: '🙂', label: 'Personal', color: '#7c3aed' },
+            work:     { icon: '💼', label: 'Work',     color: '#3b82f6' },
+            health:   { icon: '💪', label: 'Health',   color: '#10b981' },
+            finance:  { icon: '💰', label: 'Finance',  color: '#f59e0b' },
+            goal:     { icon: '🎯', label: 'Goal',     color: '#ef4444' },
+            default:  { icon: '🔔', label: 'General',  color: '#7c3aed' },
+        };
 
-    // ── Data helpers ──────────────────────────────────────────
-    function getAllReminders() {
-        return JSON.parse(localStorage.getItem('reminders') || '[]');
-    }
-    function saveAllReminders(arr) {
-        localStorage.setItem('reminders', JSON.stringify(arr));
-    }
+        const FREQ_LABELS = {
+            once: 'Once', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
+        };
 
-    // ── Categorise ────────────────────────────────────────────
-    function isOverdue(r) {
-        return !r.triggered && new Date(r.time) <= new Date();
-    }
-    function isUpcoming(r) {
-        return !r.triggered && new Date(r.time) > new Date();
-    }
-    function isCompleted(r) {
-        return r.triggered === true;
-    }
-
-    // ── Countdown text ────────────────────────────────────────
-    function countdownText(timeStr) {
-        const now  = new Date();
-        const then = new Date(timeStr);
-        const diff = then - now;
-        if (diff <= 0) {
-            const ago = Math.abs(diff);
-            if (ago < 3600000)  return `${Math.floor(ago / 60000)}m overdue`;
-            if (ago < 86400000) return `${Math.floor(ago / 3600000)}h overdue`;
-            return `${Math.floor(ago / 86400000)}d overdue`;
-        }
-        if (diff < 3600000)  return `in ${Math.floor(diff / 60000)}m`;
-        if (diff < 86400000) return `in ${Math.floor(diff / 3600000)}h`;
-        if (diff < 604800000) return `in ${Math.floor(diff / 86400000)}d`;
-        return `in ${Math.floor(diff / 604800000)}w`;
-    }
-
-    // ── Format full date ──────────────────────────────────────
-    function formatFullDate(timeStr) {
-        const d = new Date(timeStr);
-        return d.toLocaleDateString('default', {
-            weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
-        }) + ' · ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-
-    // ── Category config ───────────────────────────────────────
-    const CAT_CONFIG = {
-        personal: { icon: '🙂', label: 'Personal', color: '#7c3aed' },
-        work:     { icon: '💼', label: 'Work',     color: '#3b82f6' },
-        health:   { icon: '💪', label: 'Health',   color: '#10b981' },
-        finance:  { icon: '💰', label: 'Finance',  color: '#f59e0b' },
-        goal:     { icon: '🎯', label: 'Goal',     color: '#ef4444' },
-        default:  { icon: '🔔', label: 'General',  color: '#7c3aed' },
-    };
-
-    // ── Freq label ────────────────────────────────────────────
-    const FREQ_LABELS = {
-        once: 'Once', daily: 'Daily', weekly: 'Weekly', monthly: 'Monthly',
-    };
-
-    // ── Update stats bar ──────────────────────────────────────
-    function updateStats() {
-        const all       = getAllReminders();
-        const upcoming  = all.filter(isUpcoming).length;
-        const overdue   = all.filter(isOverdue).length;
-        const completed = all.filter(isCompleted).length;
-
-        document.getElementById('statUpcoming').textContent  = upcoming;
-        document.getElementById('statOverdue').textContent   = overdue;
-        document.getElementById('statCompleted').textContent = completed;
-
-        document.getElementById('tabBadgeUpcoming').textContent  = upcoming;
-        document.getElementById('tabBadgeOverdue').textContent   = overdue;
-        document.getElementById('tabBadgeCompleted').textContent = completed;
-
-        // Next reminder
-        const nextEl = document.getElementById('statNext');
-        const upcomingList = all.filter(isUpcoming)
-            .sort((a, b) => new Date(a.time) - new Date(b.time));
-        if (upcomingList.length > 0) {
-            nextEl.textContent = countdownText(upcomingList[0].time);
-        } else {
-            nextEl.textContent = '—';
-        }
-    }
-
-    // ── Sort reminders ────────────────────────────────────────
-    function sortReminders(arr) {
-        if (currentSort === 'soonest') return [...arr].sort((a, b) => new Date(a.time) - new Date(b.time));
-        if (currentSort === 'oldest')  return [...arr].sort((a, b) => new Date(b.time) - new Date(a.time));
-        if (currentSort === 'alpha')   return [...arr].sort((a, b) => a.label.localeCompare(b.label));
-        return arr;
-    }
-
-    // ── Build reminder card ───────────────────────────────────
-    function buildReminderCard(r) {
-        const cat       = CAT_CONFIG[r.category] || CAT_CONFIG.default;
-        const color     = r.color || cat.color;
-        const overdue   = isOverdue(r);
-        const completed = isCompleted(r);
-        const countdown = countdownText(r.time);
-        const fullDate  = formatFullDate(r.time);
-        const freqLabel = FREQ_LABELS[r.freq] || 'Once';
-        const isGoal    = r.fromGoal === true;
-
-        const card = document.createElement('div');
-        card.className = `rem-card${overdue ? ' rem-overdue' : ''}${completed ? ' rem-completed' : ''}`;
-        card.style.setProperty('--rem-color', color);
-
-        card.innerHTML = `
-<div class="rem-card-accent" style="background:${color};"></div>
-<div class="rem-card-icon" style="background:${color}22;color:${color};">
-    ${cat.icon}
-</div>
-<div class="rem-card-body">
-    <div class="rem-card-top">
-        <div class="rem-card-title">${r.label}</div>
-        <div class="rem-card-badges">
-            ${isGoal ? `<span class="rem-badge goal-badge">
-                <i class="fa-solid fa-bullseye"></i> Goal
-            </span>` : ''}
-            <span class="rem-badge cat-badge" style="background:${color}18;color:${color};border-color:${color}33;">
-                ${cat.label}
-            </span>
-            ${freqLabel !== 'Once' ? `<span class="rem-badge freq-badge">
-                <i class="fa-solid fa-rotate"></i> ${freqLabel}
-            </span>` : ''}
-            ${overdue ? `<span class="rem-badge overdue-badge">
-                <i class="fa-solid fa-triangle-exclamation"></i> Overdue
-            </span>` : ''}
-            ${completed ? `<span class="rem-badge done-badge">
-                <i class="fa-solid fa-check"></i> Done
-            </span>` : ''}
-        </div>
-    </div>
-    ${r.note ? `<div class="rem-card-note">${r.note}</div>` : ''}
-    <div class="rem-card-meta">
-        <span class="rem-card-date">
-            <i class="fa-solid fa-calendar-day"></i> ${fullDate}
-        </span>
-        <span class="rem-card-countdown ${overdue ? 'overdue' : completed ? 'done' : ''}">
-            <i class="fa-solid fa-${completed ? 'circle-check' : overdue ? 'circle-exclamation' : 'clock'}"></i>
-            ${completed ? 'Completed' : countdown}
-        </span>
-    </div>
-</div>
-<div class="rem-card-actions">
-    ${!completed ? `
-    <button class="rem-action-btn done-btn" data-action="done" data-id="${r.id}" title="Mark done">
-        <i class="fa-solid fa-check"></i>
-    </button>` : `
-    <button class="rem-action-btn undo-btn" data-action="undo" data-id="${r.id}" title="Undo">
-        <i class="fa-solid fa-rotate-left"></i>
-    </button>`}
-    ${overdue ? `
-    <button class="rem-action-btn snooze-btn" data-action="snooze" data-id="${r.id}" title="Snooze">
-        <i class="fa-solid fa-clock"></i>
-    </button>` : ''}
-    ${!r.fromGoal ? `
-    <button class="rem-action-btn edit-btn" data-action="edit" data-id="${r.id}" title="Edit">
-        <i class="fa-solid fa-pen"></i>
-    </button>` : ''}
-    <button class="rem-action-btn delete-btn" data-action="delete" data-id="${r.id}" title="Delete">
-        <i class="fa-solid fa-xmark"></i>
-    </button>
-</div>`;
-
-        // Wire up actions
-        card.querySelectorAll('[data-action]').forEach(btn => {
-            btn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                const action = this.dataset.action;
-                const id     = parseFloat(this.dataset.id);
-                handleCardAction(action, id);
-            });
-        });
-
-        return card;
-    }
-
-    // ── Handle card actions ───────────────────────────────────
-    function handleCardAction(action, id) {
-        const all = getAllReminders();
-        const r   = all.find(x => x.id === id);
-        if (!r) return;
-
-        if (action === 'done') {
-            r.triggered   = true;
-            r.completedAt = new Date().toISOString();
-            saveAllReminders(all);
-            pushNotification('reminder', 'Reminder completed ✅', `"${r.label}" marked as done.`);
-            showToast(`"${r.label}" marked as done ✓`, 'success');
-            updateStats();
-            renderReminders();
-        }
-
-        if (action === 'undo') {
-            r.triggered   = false;
-            r.completedAt = null;
-            // Reset time to 1 minute from now if in the past
-            if (new Date(r.time) <= new Date()) {
-                const future = new Date();
-                future.setMinutes(future.getMinutes() + 1);
-                r.time = future.toISOString();
-            }
-            saveAllReminders(all);
-            showToast(`"${r.label}" restored to upcoming ↩`, 'info');
-            updateStats();
-            renderReminders();
-        }
-
-        if (action === 'snooze') {
-            snoozeTargetId = id;
-            const nameEl = document.getElementById('snoozeReminderName');
-            if (nameEl) nameEl.textContent = `"${r.label}"`;
-            openOverlay('snoozeModalOverlay');
-        }
-
-        if (action === 'edit') {
-            openEditModal(r);
-        }
-
-        if (action === 'delete') {
-            confirmDelete(
-                `Delete "${r.label}"? This cannot be undone.`,
-                () => {
-                    const updated = getAllReminders().filter(x => x.id !== id);
-                    saveAllReminders(updated);
-                    pushNotification('delete', 'Reminder deleted', `"${r.label}" has been removed.`);
-                    showToast(`Reminder deleted`, 'error');
-                    updateStats();
+        async function fetchReminders() {
+            const list = document.getElementById('remList');
+            if (list) list.innerHTML = `<div class="loading-state" style="text-align:center;padding:40px;color:#888;">Loading reminders...</div>`;
+            try {
+                const res = await apiFetch('/api/reminders');
+                if (res.data) {
+                    remindersData = res.data.map(r => ({ ...r, id: r._id }));
                     renderReminders();
-                },
-                { icon: '🔔', title: 'Delete Reminder?' }
-            );
+                }
+            } catch (err) {
+                console.error('Failed to fetch reminders:', err);
+                showToast('Failed to load reminders', 'error');
+            }
         }
-    }
 
-    // ── Render list ───────────────────────────────────────────
-    function renderReminders() {
-        const list = document.getElementById('remList');
-        if (!list) return;
+        function formatReminderDate(dateStr) {
+            const d = new Date(dateStr);
+            const options = { weekday: 'long', month: 'long', day: 'numeric' };
+            const datePart = d.toLocaleDateString('en-US', options);
+            const timePart = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            return `${datePart} at ${timePart}`;
+        }
 
-        const all = getAllReminders();
+        function countdownText(timeStr) {
+            const now = new Date();
+            const then = new Date(timeStr);
+            const diff = then - now;
+            if (diff <= 0) {
+                const ago = Math.abs(diff);
+                if (ago < 60000) return 'due now';
+                if (ago < 3600000) return `${Math.floor(ago / 60000)}m overdue`;
+                if (ago < 86400000) return `${Math.floor(ago / 3600000)}h overdue`;
+                return `${Math.floor(ago / 86400000)}d overdue`;
+            }
+            if (diff < 3600000) return `in ${Math.floor(diff / 60000)}m`;
+            if (diff < 86400000) return `in ${Math.floor(diff / 3600000)}h`;
+            if (diff < 604800000) return `in ${Math.floor(diff / 86400000)}d`;
+            return `in ${Math.floor(diff / 604800000)}w`;
+        }
 
-        let filtered;
-        if (currentTab === 'upcoming')  filtered = all.filter(isUpcoming);
-        if (currentTab === 'overdue')   filtered = all.filter(isOverdue);
-        if (currentTab === 'completed') filtered = all.filter(isCompleted);
+        function buildReminderItem(r) {
+            const cat = CAT_CONFIG[r.category] || CAT_CONFIG.default;
+            const color = r.color || cat.color;
+            const formattedDate = formatReminderDate(r.datetime);
+            const freqLabel = FREQ_LABELS[r.recurrenceType] || 'Once';
+            const overdue = !r.completed && new Date(r.datetime) < new Date();
 
-        filtered = sortReminders(filtered);
-        list.innerHTML = '';
+            const item = document.createElement('div');
+            item.className = `rem-card ${r.completed ? 'rem-completed' : ''} ${overdue ? 'rem-overdue' : ''}`;
+            item.style.setProperty('--rem-color', color);
 
-        if (filtered.length === 0) {
-            const emptyMessages = {
-                upcoming:  { icon: '⏰', title: 'No upcoming reminders', sub: 'Click "New Reminder" to schedule one.' },
-                overdue:   { icon: '✅', title: 'Nothing overdue!', sub: "You're all caught up — great job!" },
-                completed: { icon: '🎉', title: 'No completed reminders yet', sub: 'Completed reminders will appear here.' },
-            };
-            const msg = emptyMessages[currentTab];
-            list.innerHTML = `
-<div class="rem-empty">
-    <div class="rem-empty-icon">${msg.icon}</div>
-    <div class="rem-empty-title">${msg.title}</div>
-    <div class="rem-empty-sub">${msg.sub}</div>
-    ${currentTab === 'upcoming' ? `
-    <button class="rem-empty-btn" id="emptyAddBtn">
-        <i class="fa-solid fa-plus"></i> New Reminder
-    </button>` : ''}
-</div>`;
-            document.getElementById('emptyAddBtn')?.addEventListener('click', () => {
-                openOverlay('reminderModalOverlay');
+            item.innerHTML = `
+                <div class="rem-card-accent" style="background:${color};"></div>
+                <div class="rem-card-icon" style="background:${color}22;color:${color};">
+                    ${cat.icon}
+                </div>
+                <div class="rem-card-body">
+                    <div class="rem-card-top">
+                        <div class="rem-card-title" style="${r.completed ? 'text-decoration:line-through;opacity:0.6;' : ''}">${r.title}</div>
+                        <div class="rem-card-badges">
+                            <span class="rem-badge cat-badge" style="background:${color}18;color:${color};border-color:${color}33;">
+                                ${cat.label}
+                            </span>
+                            ${r.recurring ? `<span class="rem-badge freq-badge">
+                                <i class="fa-solid fa-rotate"></i> Repeats ${r.recurrenceType}
+                            </span>` : ''}
+                            ${overdue ? `<span class="rem-badge overdue-badge">
+                                <i class="fa-solid fa-triangle-exclamation"></i> Overdue
+                            </span>` : ''}
+                        </div>
+                    </div>
+                    ${r.notes ? `<div class="rem-card-note">${r.notes}</div>` : ''}
+                    <div class="rem-card-meta">
+                        <span class="rem-card-date">
+                            <i class="fa-solid fa-calendar-day"></i> ${formattedDate}
+                        </span>
+                        ${!r.completed ? `
+                        <span class="rem-card-countdown ${overdue ? 'overdue' : ''}">
+                            <i class="fa-solid fa-${overdue ? 'circle-exclamation' : 'clock'}"></i>
+                            ${countdownText(r.datetime)}
+                        </span>` : ''}
+                    </div>
+                </div>
+                <div class="rem-card-actions">
+                    ${!r.completed ? `
+                    <button class="rem-action-btn done-btn" data-id="${r.id}" title="Mark complete">
+                        <i class="fa-solid fa-check"></i>
+                    </button>
+                    <button class="rem-action-btn snooze-btn" data-id="${r.id}" title="Snooze">
+                        <i class="fa-solid fa-clock"></i>
+                    </button>` : ''}
+                    <button class="rem-action-btn edit-btn" data-id="${r.id}" title="Edit">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button class="rem-action-btn delete-btn" data-id="${r.id}" title="Delete">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            `;
+
+            item.querySelector('.done-btn')?.addEventListener('click', () => markComplete(r.id));
+            item.querySelector('.snooze-btn')?.addEventListener('click', () => {
+                snoozeTargetId = r.id;
+                document.getElementById('snoozeReminderName').textContent = `"${r.title}"`;
+                openOverlay('snoozeModalOverlay');
             });
-            return;
-        }
-
-        filtered.forEach(r => list.appendChild(buildReminderCard(r)));
-    }
-
-    // ── Open/close overlays ───────────────────────────────────
-    function openOverlay(id) {
-        document.getElementById(id)?.classList.add('active');
-        document.body.style.overflow = 'hidden';
-    }
-    function closeOverlay(id) {
-        document.getElementById(id)?.classList.remove('active');
-        document.body.style.overflow = '';
-    }
-
-    // ── Open edit modal ───────────────────────────────────────
-    function openEditModal(r) {
-        editingId = r.id;
-        document.getElementById('reminderModalTitle').innerHTML =
-            `<i class="fa-solid fa-pen" style="color:#7c3aed;margin-right:8px;"></i> Edit Reminder`;
-        document.getElementById('remLabelInput').value = r.label;
-        document.getElementById('remNoteInput').value  = r.note || '';
-        document.getElementById('remDateInput').value  = r.time.split('T')[0];
-        document.getElementById('remTimeInput').value  = r.time.split('T')[1]?.slice(0, 5) || '';
-        document.getElementById('saveReminderBtn').innerHTML =
-            `<i class="fa-solid fa-floppy-disk"></i> Save Changes`;
-
-        // Set category
-        currentCat = r.category || 'personal';
-        document.querySelectorAll('.rem-cat-btn').forEach(b => {
-            b.classList.toggle('active-cat', b.dataset.cat === currentCat);
-        });
-
-        // Set freq
-        currentFreq = r.freq || 'once';
-        document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(b => {
-            b.classList.toggle('active-freq', b.dataset.freq === currentFreq);
-        });
-
-        // Set color
-        currentColor = r.color || '#7c3aed';
-        document.querySelectorAll('.rem-color-btn').forEach(b => {
-            b.classList.toggle('active-color', b.dataset.color === currentColor);
-        });
-
-        updateModalPreview();
-        openOverlay('reminderModalOverlay');
-    }
-
-    // ── Reset modal ───────────────────────────────────────────
-    function resetModal() {
-        editingId = null;
-        document.getElementById('reminderModalTitle').innerHTML =
-            `<i class="fa-solid fa-bell" style="color:#7c3aed;margin-right:8px;"></i> New Reminder`;
-        document.getElementById('remLabelInput').value = '';
-        document.getElementById('remNoteInput').value  = '';
-        document.getElementById('remDateInput').value  = new Date().toISOString().split('T')[0];
-        document.getElementById('remTimeInput').value  = '';
-        document.getElementById('remLabelError').classList.remove('visible');
-        document.getElementById('remDateTimeError').classList.remove('visible');
-        document.getElementById('saveReminderBtn').innerHTML =
-            `<i class="fa-solid fa-bell"></i> Set Reminder`;
-
-        currentCat   = 'personal';
-        currentFreq  = 'once';
-        currentColor = '#7c3aed';
-
-        document.querySelectorAll('.rem-cat-btn').forEach(b => {
-            b.classList.toggle('active-cat', b.dataset.cat === 'personal');
-        });
-        document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(b => {
-            b.classList.toggle('active-freq', b.dataset.freq === 'once');
-        });
-        document.querySelectorAll('.rem-color-btn').forEach(b => {
-            b.classList.toggle('active-color', b.dataset.color === '#7c3aed');
-        });
-
-        updateModalPreview();
-    }
-
-    // ── Live preview in modal ─────────────────────────────────
-    function updateModalPreview() {
-        const label    = document.getElementById('remLabelInput')?.value.trim();
-        const dateStr  = document.getElementById('remDateInput')?.value;
-        const timeStr  = document.getElementById('remTimeInput')?.value;
-        const previewEl = document.getElementById('remModalPreview');
-        const textEl   = document.getElementById('remPreviewText');
-        const iconEl   = document.getElementById('remPreviewIcon');
-        if (!previewEl || !textEl) return;
-
-        if (dateStr && timeStr) {
-            const dt         = new Date(`${dateStr}T${timeStr}`);
-            const freqLabel  = FREQ_LABELS[currentFreq] || 'Once';
-            const formattedDate = dt.toLocaleDateString('default', {
-                weekday: 'short', month: 'short', day: 'numeric',
+            item.querySelector('.edit-btn').addEventListener('click', () => openEditModal(r));
+            item.querySelector('.delete-btn').addEventListener('click', () => {
+                confirmDelete(`Delete "${r.title}"?`, () => deleteReminder(r.id));
             });
-            const formattedTime = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            const titlePart  = label ? `"${label}"` : 'Your reminder';
-            textEl.textContent = `${titlePart} — ${freqLabel === 'Once' ? '' : freqLabel + ', starting '}${formattedDate} at ${formattedTime}`;
-            if (iconEl) iconEl.style.color = currentColor;
-            previewEl.style.borderColor = currentColor + '44';
-            previewEl.style.background  = currentColor + '10';
-            previewEl.style.color       = currentColor;
-        } else {
-            textEl.textContent = 'Select a date and time to preview';
-            if (iconEl) iconEl.style.color = 'var(--text-muted)';
-            previewEl.style.borderColor = '';
-            previewEl.style.background  = '';
-            previewEl.style.color       = 'var(--text-muted)';
-        }
-    }
 
-    // ── Save reminder ─────────────────────────────────────────
-    document.getElementById('saveReminderBtn')?.addEventListener('click', () => {
-        const label   = document.getElementById('remLabelInput')?.value.trim();
-        const dateStr = document.getElementById('remDateInput')?.value;
-        const timeStr = document.getElementById('remTimeInput')?.value;
-        const note    = document.getElementById('remNoteInput')?.value.trim();
-        const labelErr = document.getElementById('remLabelError');
-        const dtErr    = document.getElementById('remDateTimeError');
-
-        let valid = true;
-
-        if (!label) {
-            labelErr?.classList.add('visible');
-            document.getElementById('remLabelInput')?.focus();
-            valid = false;
-        } else {
-            labelErr?.classList.remove('visible');
+            return item;
         }
 
-        if (!dateStr || !timeStr) {
-            dtErr?.classList.add('visible');
-            valid = false;
-        } else {
-            const dt = new Date(`${dateStr}T${timeStr}`);
-            if (!editingId && dt <= new Date()) {
-                dtErr?.classList.add('visible');
-                valid = false;
+        function renderReminders() {
+            const list = document.getElementById('remList');
+            if (!list) return;
+
+            // Sort: incomplete ASC, completed DESC
+            const sorted = [...remindersData].sort((a, b) => {
+                if (a.completed !== b.completed) return a.completed ? 1 : -1;
+                const timeA = new Date(a.datetime).getTime();
+                const timeB = new Date(b.datetime).getTime();
+                return a.completed ? timeB - timeA : timeA - timeB;
+            });
+
+            const upcoming = sorted.filter(r => !r.completed);
+            const completed = sorted.filter(r => r.completed);
+
+            list.innerHTML = '';
+
+            // Stats Update
+            const overdueCount = upcoming.filter(r => new Date(r.datetime) < new Date()).length;
+            document.getElementById('statUpcoming').textContent = upcoming.length;
+            document.getElementById('statOverdue').textContent = overdueCount;
+            document.getElementById('statCompleted').textContent = completed.length;
+            document.getElementById('tabBadgeUpcoming').textContent = upcoming.length;
+            document.getElementById('tabBadgeOverdue').textContent = overdueCount;
+            document.getElementById('tabBadgeCompleted').textContent = completed.length;
+
+            const nextEl = document.getElementById('statNext');
+            if (upcoming.length > 0) {
+                const soonest = upcoming[0];
+                nextEl.textContent = countdownText(soonest.datetime);
             } else {
-                dtErr?.classList.remove('visible');
+                nextEl.textContent = '—';
             }
+
+            // Upcoming Section
+            const upSec = document.createElement('div');
+            upSec.className = 'rem-section-wrap';
+            upSec.innerHTML = '<h3 class="rem-section-title"><i class="fa-solid fa-clock"></i> Upcoming</h3>';
+            const upList = document.createElement('div');
+            upList.className = 'rem-sub-list';
+            if (upcoming.length === 0) {
+                upList.innerHTML = '<div class="rem-empty-sub">No upcoming reminders</div>';
+            } else {
+                upcoming.forEach(r => upList.appendChild(buildReminderItem(r)));
+            }
+            upSec.appendChild(upList);
+            list.appendChild(upSec);
+
+            // Completed Section
+            const compSec = document.createElement('div');
+            compSec.className = 'rem-section-wrap';
+            compSec.innerHTML = '<h3 class="rem-section-title"><i class="fa-solid fa-circle-check"></i> Completed</h3>';
+            const compList = document.createElement('div');
+            compList.className = 'rem-sub-list';
+            if (completed.length === 0) {
+                compList.innerHTML = '<div class="rem-empty-sub">No completed reminders yet</div>';
+            } else {
+                completed.forEach(r => compList.appendChild(buildReminderItem(r)));
+            }
+            compSec.appendChild(compList);
+            list.appendChild(compSec);
         }
 
-        if (!valid) return;
+        async function saveReminder() {
+            const title = document.getElementById('remLabelInput').value.trim();
+            const date = document.getElementById('remDateInput').value;
+            const time = document.getElementById('remTimeInput').value;
+            const notes = document.getElementById('remNoteInput').value.trim();
+            const recurring = currentFreq !== 'once';
+            const recurrenceType = recurring ? currentFreq : null;
 
-        const all = getAllReminders();
-
-        if (editingId !== null) {
-            // Edit existing
-            const r = all.find(x => x.id === editingId);
-            if (r) {
-                r.label    = label;
-                r.note     = note;
-                r.time     = `${dateStr}T${timeStr}`;
-                r.freq     = currentFreq;
-                r.category = currentCat;
-                r.color    = currentColor;
-                r.triggered = false;
+            if (!title) {
+                document.getElementById('remLabelError').classList.add('visible');
+                return;
             }
-            saveAllReminders(all);
-            pushNotification('reminder', 'Reminder updated ✏️', `"${label}" has been updated.`);
-            showToast(`Reminder updated ✓`, 'success');
-        } else {
-            // Create new
-            const newR = {
-                id:        Date.now() + Math.random(),
-                label,
-                note:      note || '',
-                time:      `${dateStr}T${timeStr}`,
-                freq:      currentFreq,
-                category:  currentCat,
-                color:     currentColor,
-                triggered: false,
-                fromGoal:  false,
-                createdAt: new Date().toISOString(),
-            };
-            all.push(newR);
-            saveAllReminders(all);
-            scheduleReminderAlert(newR);
-            pushNotification('reminder', 'Reminder set 🔔', `"${label}" scheduled for ${dateStr} at ${timeStr}.`);
-            showToast(`Reminder set! 🔔`, 'success');
-        }
+            if (!date || !time) {
+                document.getElementById('remDateTimeError').classList.add('visible');
+                return;
+            }
 
-        closeOverlay('reminderModalOverlay');
-        resetModal();
-        updateStats();
-        renderReminders();
-    });
+            const datetime = `${date}T${time}`;
+            if (!editingReminderId && new Date(datetime) < new Date()) {
+                document.getElementById('remDateTimeError').textContent = 'Please select a future date and time.';
+                document.getElementById('remDateTimeError').classList.add('visible');
+                return;
+            }
 
-    // ── Schedule browser notification ─────────────────────────
-    function scheduleReminderAlert(r) {
-        const delay = new Date(r.time) - new Date();
-        if (delay <= 0) return;
-        setTimeout(() => {
-            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                try {
-                    new Notification('⏰ Goal Vault Reminder', {
-                        body: r.label,
-                        icon: 'https://img.icons8.com/fluency/96/alarm.png',
+            const body = { title, datetime, notes, recurring, recurrenceType, category: currentCat, color: currentColor };
+
+            try {
+                let res;
+                if (editingReminderId) {
+                    res = await apiFetch(`/api/reminders/${editingReminderId}`, {
+                        method: 'PATCH',
+                        body
                     });
-                } catch (e) { /* silent */ }
+                } else {
+                    res = await apiFetch('/api/reminders', {
+                        method: 'POST',
+                        body
+                    });
+                }
+
+                if (res.success) {
+                    const saved = { ...res.data, id: res.data._id };
+                    if (editingReminderId) {
+                        const idx = remindersData.findIndex(r => r.id === editingReminderId);
+                        if (idx !== -1) remindersData[idx] = saved;
+                        showToast('Reminder updated', 'success');
+                    } else {
+                        remindersData.push(saved);
+                        showToast('Reminder set! 🔔', 'success');
+                        pushNotification('reminder', 'Reminder set 🔔', `"${title}" scheduled.`);
+                    }
+                    closeOverlay('reminderModalOverlay');
+                    resetModal();
+                    renderReminders();
+                }
+            } catch (err) {
+                console.error('Save failed:', err);
+                showToast(err.message || 'Failed to save reminder', 'error');
             }
-            // Mark as triggered
-            const all = getAllReminders();
-            const rem = all.find(x => x.id === r.id);
-            if (rem) {
-                rem.triggered   = true;
-                rem.completedAt = new Date().toISOString();
-                saveAllReminders(all);
-            }
-            pushNotification('reminder', `Reminder: ${r.label} ⏰`, `Your reminder "${r.label}" is due now!`);
-            showToast(`⏰ ${r.label}`, 'warning');
-            updateStats();
-            renderReminders();
-        }, delay);
-    }
-
-    // ── Snooze ────────────────────────────────────────────────
-    document.querySelectorAll('.rem-snooze-btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-            const minutes = parseInt(this.dataset.snooze);
-            const all     = getAllReminders();
-            const r       = all.find(x => x.id === snoozeTargetId);
-            if (!r) return;
-
-            const newTime    = new Date();
-            newTime.setMinutes(newTime.getMinutes() + minutes);
-            r.time           = newTime.toISOString();
-            r.triggered      = false;
-            r.snoozed        = true;
-            saveAllReminders(all);
-            scheduleReminderAlert(r);
-
-            const label = minutes < 60
-                ? `${minutes} min`
-                : minutes === 1440 ? 'tomorrow' : `${minutes / 60}h`;
-
-            pushNotification('reminder', 'Reminder snoozed 💤', `"${r.label}" snoozed for ${label}.`);
-            showToast(`Snoozed for ${label} 💤`, 'info');
-            closeOverlay('snoozeModalOverlay');
-            snoozeTargetId = null;
-            updateStats();
-            renderReminders();
-        });
-    });
-
-    // ── Tabs ──────────────────────────────────────────────────
-    document.querySelectorAll('.rem-tab').forEach(tab => {
-        tab.addEventListener('click', function () {
-            document.querySelectorAll('.rem-tab').forEach(t => t.classList.remove('active'));
-            this.classList.add('active');
-            currentTab = this.dataset.tab;
-            renderReminders();
-        });
-    });
-
-    // ── Sort ──────────────────────────────────────────────────
-    document.getElementById('remSortSelect')?.addEventListener('change', function () {
-        currentSort = this.value;
-        renderReminders();
-    });
-
-    // ── Category picker ───────────────────────────────────────
-    document.querySelectorAll('.rem-cat-btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-            document.querySelectorAll('.rem-cat-btn').forEach(b => b.classList.remove('active-cat'));
-            this.classList.add('active-cat');
-            currentCat = this.dataset.cat;
-            updateModalPreview();
-        });
-    });
-
-    // ── Freq picker ───────────────────────────────────────────
-    document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-            document.querySelectorAll('#remFreqPicker .goal-freq-btn')
-                .forEach(b => b.classList.remove('active-freq'));
-            this.classList.add('active-freq');
-            currentFreq = this.dataset.freq;
-            updateModalPreview();
-        });
-    });
-
-    // ── Color picker ──────────────────────────────────────────
-    document.querySelectorAll('.rem-color-btn').forEach(btn => {
-        btn.addEventListener('click', function () {
-            document.querySelectorAll('.rem-color-btn').forEach(b => b.classList.remove('active-color'));
-            this.classList.add('active-color');
-            currentColor = this.dataset.color;
-            updateModalPreview();
-        });
-    });
-
-    // ── Live preview on input ─────────────────────────────────
-    ['remLabelInput', 'remDateInput', 'remTimeInput'].forEach(id => {
-        document.getElementById(id)?.addEventListener('input', updateModalPreview);
-    });
-
-    // ── Open/close modal buttons ──────────────────────────────
-    document.getElementById('openReminderModal')?.addEventListener('click', () => {
-        resetModal();
-        openOverlay('reminderModalOverlay');
-        setTimeout(() => document.getElementById('remLabelInput')?.focus(), 100);
-    });
-
-    document.getElementById('closeReminderModal')?.addEventListener('click', () => {
-        closeOverlay('reminderModalOverlay');
-        resetModal();
-    });
-
-    document.getElementById('closeSnoozeModal')?.addEventListener('click', () => {
-        closeOverlay('snoozeModalOverlay');
-        snoozeTargetId = null;
-    });
-
-    ['reminderModalOverlay', 'snoozeModalOverlay'].forEach(id => {
-        document.getElementById(id)?.addEventListener('click', function (e) {
-            if (e.target === this) {
-                closeOverlay(id);
-                if (id === 'reminderModalOverlay') resetModal();
-                if (id === 'snoozeModalOverlay') snoozeTargetId = null;
-            }
-        });
-    });
-
-    document.addEventListener('keydown', e => {
-        if (e.key === 'Escape') {
-            closeOverlay('reminderModalOverlay');
-            closeOverlay('snoozeModalOverlay');
-            resetModal();
         }
-    });
 
-    // ── Enter key on label ────────────────────────────────────
-    document.getElementById('remLabelInput')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter') document.getElementById('saveReminderBtn')?.click();
-    });
+        async function markComplete(id) {
+            try {
+                const res = await apiFetch(`/api/reminders/${id}`, {
+                    method: 'PATCH',
+                    body: { completed: true }
+                });
+                if (res.success) {
+                    const idx = remindersData.findIndex(r => r.id === id);
+                    if (idx !== -1) remindersData[idx].completed = true;
+                    renderReminders();
+                    showToast('Reminder completed ✓', 'success');
+                }
+            } catch (err) {
+                console.error('Update failed:', err);
+                showToast('Failed to mark complete', 'error');
+            }
+        }
 
-    // ── Schedule all existing upcoming reminders ──────────────
-    function scheduleAllExisting() {
-        getAllReminders()
-            .filter(r => !r.triggered && new Date(r.time) > new Date())
-            .forEach(scheduleReminderAlert);
-    }
+        async function snoozeReminder(minutes) {
+            if (!snoozeTargetId) return;
+            const r = remindersData.find(x => x.id === snoozeTargetId);
+            if (!r) return;
+            const newTime = new Date();
+            newTime.setMinutes(newTime.getMinutes() + minutes);
+            try {
+                const res = await apiFetch(`/api/reminders/${snoozeTargetId}`, {
+                    method: 'PATCH',
+                    body: { datetime: newTime.toISOString(), completed: false }
+                });
+                if (res.success) {
+                    const saved = { ...res.data, id: res.data._id };
+                    const idx = remindersData.findIndex(x => x.id === snoozeTargetId);
+                    if (idx !== -1) remindersData[idx] = saved;
+                    renderReminders();
+                    showToast('Snoozed', 'info');
+                    closeOverlay('snoozeModalOverlay');
+                    snoozeTargetId = null;
+                }
+            } catch (err) {
+                showToast('Failed to snooze', 'error');
+            }
+        }
 
-    // ── Auto-refresh countdown every minute ───────────────────
-    setInterval(() => {
-        updateStats();
-        renderReminders();
-    }, 60000);
+        async function deleteReminder(id) {
+            try {
+                const res = await apiFetch(`/api/reminders/${id}`, { method: 'DELETE' });
+                if (res.success) {
+                    remindersData = remindersData.filter(r => r.id !== id);
+                    renderReminders();
+                    showToast('Reminder deleted', 'error');
+                }
+            } catch (err) {
+                console.error('Delete failed:', err);
+                showToast('Failed to delete', 'error');
+            }
+        }
 
-    // ── Init ──────────────────────────────────────────────────
-    window.addEventListener('DOMContentLoaded', () => {
-        resetModal();
-        document.getElementById('remDateInput').value = new Date().toISOString().split('T')[0];
-        updateStats();
-        renderReminders();
-        scheduleAllExisting();
-    });
+        function openEditModal(r) {
+            editingReminderId = r.id;
+            document.getElementById('reminderModalTitle').innerHTML = '<i class="fa-solid fa-pen"></i> Edit Reminder';
+            document.getElementById('remLabelInput').value = r.title;
+            document.getElementById('remNoteInput').value = r.notes || '';
+            
+            const dt = new Date(r.datetime);
+            // Account for local timezone when populating datetime inputs
+            const year = dt.getFullYear();
+            const month = String(dt.getMonth() + 1).padStart(2, '0');
+            const day = String(dt.getDate()).padStart(2, '0');
+            const hours = String(dt.getHours()).padStart(2, '0');
+            const mins = String(dt.getMinutes()).padStart(2, '0');
+            
+            document.getElementById('remDateInput').value = `${year}-${month}-${day}`;
+            document.getElementById('remTimeInput').value = `${hours}:${mins}`;
+
+            currentCat = r.category || 'personal';
+            currentColor = r.color || '#7c3aed';
+            currentFreq = r.recurrenceType || 'once';
+
+            updatePickers();
+            openOverlay('reminderModalOverlay');
+        }
+
+        function resetModal() {
+            editingReminderId = null;
+            document.getElementById('reminderModalTitle').innerHTML = '<i class="fa-solid fa-bell"></i> New Reminder';
+            document.getElementById('remLabelInput').value = '';
+            document.getElementById('remNoteInput').value = '';
+            document.getElementById('remDateInput').value = new Date().toISOString().split('T')[0];
+            document.getElementById('remTimeInput').value = '';
+            document.getElementById('remLabelError').classList.remove('visible');
+            document.getElementById('remDateTimeError').classList.remove('visible');
+            currentCat = 'personal';
+            currentFreq = 'once';
+            currentColor = '#7c3aed';
+            updatePickers();
+        }
+
+        function updatePickers() {
+            document.querySelectorAll('.rem-cat-btn').forEach(b => b.classList.toggle('active-cat', b.dataset.cat === currentCat));
+            document.querySelectorAll('.rem-color-btn').forEach(b => b.classList.toggle('active-color', b.dataset.color === currentColor));
+            document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(b => b.classList.toggle('active-freq', b.dataset.freq === currentFreq));
+        }
+
+        function openOverlay(id) {
+            document.getElementById(id)?.classList.add('active');
+            document.body.style.overflow = 'hidden';
+        }
+        function closeOverlay(id) {
+            document.getElementById(id)?.classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        // Listeners
+        document.getElementById('saveReminderBtn')?.addEventListener('click', saveReminder);
+        document.getElementById('openReminderModal')?.addEventListener('click', () => { resetModal(); openOverlay('reminderModalOverlay'); });
+        document.getElementById('closeReminderModal')?.addEventListener('click', () => { closeOverlay('reminderModalOverlay'); resetModal(); });
+        document.getElementById('closeSnoozeModal')?.addEventListener('click', () => { closeOverlay('snoozeModalOverlay'); snoozeTargetId = null; });
+
+        document.querySelectorAll('.rem-cat-btn').forEach(btn => btn.addEventListener('click', function() { currentCat = this.dataset.cat; updatePickers(); }));
+        document.querySelectorAll('.rem-color-btn').forEach(btn => btn.addEventListener('click', function() { currentColor = this.dataset.color; updatePickers(); }));
+        document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(btn => btn.addEventListener('click', function() { currentFreq = this.dataset.freq; updatePickers(); }));
+        document.querySelectorAll('.rem-snooze-btn').forEach(btn => btn.addEventListener('click', function() { snoozeReminder(parseInt(this.dataset.snooze)); }));
+
+        ['reminderModalOverlay', 'snoozeModalOverlay'].forEach(id => {
+            document.getElementById(id)?.addEventListener('click', function (e) {
+                if (e.target === this) {
+                    closeOverlay(id);
+                    if (id === 'reminderModalOverlay') resetModal();
+                    if (id === 'snoozeModalOverlay') snoozeTargetId = null;
+                }
+            });
+        });
+
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') {
+                closeOverlay('reminderModalOverlay');
+                closeOverlay('snoozeModalOverlay');
+                resetModal();
+            }
+        });
+
+        fetchReminders();
+    })();
 }
 
 // ============================================================
@@ -1056,7 +925,6 @@ if (page === 'dashboard') {
             grid.appendChild(d);
         }
     }
-
     function updateRing(streakVal) {
         const milestones = [7, 14, 21, 30, 60, 100];
         const prev       = milestones.filter(m => m <= streakVal).pop() || 0;
@@ -1077,111 +945,217 @@ if (page === 'dashboard') {
         if (el) el.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
     }
 
-    function refreshDash() {
-        const streakVal       = parseInt(localStorage.getItem('streak') || '0');
-        const freshTasks      = getTasks();
-        const freshHabits     = getHabits();
-        const notes           = JSON.parse(localStorage.getItem('appNotes') || '[]');
-        const activeReminders = getReminders().filter(r => new Date(r.time) > new Date() && !r.triggered);
-        const u = localStorage.getItem('hubUser') || sessionStorage.getItem('hubUser') || 'User';
+    async function refreshDash() {
+        const results = await Promise.allSettled([
+            apiFetch('/api/goals'),
+            apiFetch('/api/habits'),
+            apiFetch('/api/tasks'),
+            apiFetch('/api/reminders?completed=false'),
+            apiFetch('/api/notes')
+        ]);
 
-        const usernameDisplay = document.getElementById('usernameDisplay');
-        if (usernameDisplay) usernameDisplay.textContent = u;
+        const [goalsRes, habitsRes, tasksRes, remindersRes, notesRes] = results;
 
-        const heroStreakNum   = document.getElementById('heroStreakNum');
-        const heroStreakBadge = document.getElementById('heroStreakBadge');
-        if (heroStreakNum)   heroStreakNum.textContent   = streakVal;
-        if (heroStreakBadge) heroStreakBadge.textContent = badgeText(streakVal);
+        let totalDone = 0;
+        let totalItems = 0;
 
-        const sc = document.querySelector('.streak-count');
-        if (sc) sc.textContent = streakVal;
-
-        buildDots(Math.min(streakVal, 21));
-        updateRing(streakVal);
-
-        const remaining    = freshTasks.filter(t => t.status !== 'completed').length;
-        const dashTasksNum = document.getElementById('dashTasksNum');
-        const taskTrend    = document.getElementById('taskTrend');
-        if (dashTasksNum) dashTasksNum.textContent = remaining;
-        if (taskTrend) {
-            taskTrend.textContent = remaining === 0 ? '✓ All done' : remaining + ' left';
-            taskTrend.className   = 'stat-trend ' + (remaining === 0 ? 'up' : 'warn');
-        }
-
-        const habitPct      = freshHabits.length === 0 ? 0
-            : Math.round((freshHabits.filter(h => h.done).length / freshHabits.length) * 100);
-        const dashHabitsNum = document.getElementById('dashHabitsNum');
-        const habitTrend    = document.getElementById('habitTrend');
-        if (dashHabitsNum) dashHabitsNum.textContent = habitPct + '%';
-        if (habitTrend) {
-            habitTrend.textContent = habitPct === 100 ? '✓ All done' : habitPct > 0 ? habitPct + '% done' : 'Not started';
-            habitTrend.className = 'stat-trend ' + (habitPct === 100 ? 'up' : habitPct > 0 ? 'warn' : 'neu');
-        }
-
-        const dashRemindersNum = document.getElementById('dashRemindersNum');
-        const dashRemindersSub = document.getElementById('dashRemindersSub');
-        const reminderTrend    = document.getElementById('reminderTrend');
-        const reminderCount    = activeReminders.length;
-        if (dashRemindersNum) dashRemindersNum.textContent = reminderCount;
-        if (dashRemindersSub) {
-            dashRemindersSub.textContent = reminderCount === 0 ? 'no active reminders' : 'upcoming';
-        }
-        if (reminderTrend) {
-            if (reminderCount === 0) {
-                reminderTrend.textContent = 'None set';
-                reminderTrend.className   = 'stat-trend neu';
-            } else {
-                const nextReminder = [...activeReminders].sort((a, b) => new Date(a.time) - new Date(b.time))[0];
-                const hoursLeft = Math.round((new Date(nextReminder.time) - new Date()) / (1000 * 60 * 60));
-                if (hoursLeft < 1) {
-                    reminderTrend.textContent = 'Soon!';
-                    reminderTrend.className   = 'stat-trend warn';
-                } else if (hoursLeft < 24) {
-                    reminderTrend.textContent = `${hoursLeft}h left`;
-                    reminderTrend.className   = 'stat-trend warn';
+        // Process Goals
+        if (goalsRes.status === 'fulfilled') {
+            const goals = goalsRes.value.data || [];
+            const activeGoals = goals.filter(g => g.status === 'active');
+            const readyToComplete = activeGoals.filter(g => g.progress === 100);
+            const nudge = document.getElementById('goalNudge');
+            if (nudge) {
+                if (readyToComplete.length > 0) {
+                    nudge.textContent = `You have ${readyToComplete.length} goal${readyToComplete.length > 1 ? 's' : ''} ready to mark complete! 🎯`;
+                    nudge.style.display = 'block';
+                } else if (activeGoals.length === 0) {
+                    nudge.textContent = `No active goals? Time to set a new vision! 🗺️`;
+                    nudge.style.display = 'block';
                 } else {
-                    reminderTrend.textContent = `${Math.round(hoursLeft / 24)}d left`;
-                    reminderTrend.className   = 'stat-trend up';
+                    nudge.style.display = 'none';
                 }
+            }
+            const dashGoalsNum = document.getElementById('dashGoalsNum');
+            if (dashGoalsNum) dashGoalsNum.textContent = activeGoals.length;
+        }
+
+        // Process Habits
+        if (habitsRes.status === 'fulfilled') {
+            const habits = habitsRes.value.data || [];
+            const today = getLocalYYYYMMDD();
+            const doneToday = habits.filter(h =>
+                (h.completedDates || []).some(d => getLocalYYYYMMDD(new Date(d)) === today)
+            ).length;
+            const habitPct = habits.length === 0 ? 0 : Math.round((doneToday / habits.length) * 100);
+            
+            totalDone += doneToday;
+            totalItems += habits.length;
+
+            const dashHabitsNum = document.getElementById('dashHabitsNum');
+            const habitTrend = document.getElementById('habitTrend');
+            if (dashHabitsNum) dashHabitsNum.textContent = `${doneToday}/${habits.length}`;
+            if (habitTrend) {
+                habitTrend.textContent = habitPct === 100 ? '✓ All done' : habitPct > 0 ? `${habitPct}% done` : 'Not started';
+                habitTrend.className = 'stat-trend ' + (habitPct === 100 ? 'up' : habitPct > 0 ? 'warn' : 'neu');
             }
         }
 
-        const dashNotesNum = document.getElementById('dashNotesNum');
-        const notesTrend   = document.getElementById('notesTrend');
-        if (dashNotesNum) dashNotesNum.textContent = notes.length;
-        if (notesTrend) {
-            notesTrend.textContent = notes.length > 0 ? notes.length + ' notes' : 'Empty';
-            notesTrend.className   = 'stat-trend ' + (notes.length > 0 ? 'up' : 'neu');
+        // Process Tasks
+        if (tasksRes.status === 'fulfilled') {
+            const tasks = tasksRes.value.data || [];
+            const remaining = tasks.filter(t => t.status !== 'done').length;
+            const done = tasks.length - remaining;
+            
+            totalDone += done;
+            totalItems += tasks.length;
+
+            const dashTasksNum = document.getElementById('dashTasksNum');
+            const taskTrend = document.getElementById('taskTrend');
+            if (dashTasksNum) dashTasksNum.textContent = remaining;
+            if (taskTrend) {
+                taskTrend.textContent = remaining === 0 ? '✓ All clear' : `${remaining} left`;
+                taskTrend.className = 'stat-trend ' + (remaining === 0 ? 'up' : 'warn');
+            }
         }
 
-        const totalH = freshHabits.length;
-        const doneH  = freshHabits.filter(h => h.done).length;
-        const totalT = freshTasks.length;
-        const doneT  = freshTasks.filter(t => t.status === 'completed').length;
-        const total  = totalH + totalT;
-        const done   = doneH + doneT;
-        const pct    = total === 0 ? 0 : Math.round((done / total) * 100);
+        // Process Reminders
+        if (remindersRes.status === 'fulfilled') {
+            const activeReminders = remindersRes.value.data || [];
+            const dashRemindersNum = document.getElementById('dashRemindersNum');
+            const dashRemindersSub = document.getElementById('dashRemindersSub');
+            const reminderTrend = document.getElementById('reminderTrend');
+            const reminderCount = activeReminders.length;
 
-        const fill = document.getElementById('globalProgressFill');
-        const text = document.getElementById('globalProgressText');
-        if (fill) setTimeout(() => { fill.style.width = pct + '%'; }, 300);
-        if (text) text.textContent = done + ' / ' + total + ' done';
+            if (dashRemindersNum) dashRemindersNum.textContent = reminderCount;
+            if (dashRemindersSub) dashRemindersSub.textContent = reminderCount === 0 ? 'no active reminders' : 'upcoming';
+            
+            const sorted = [...activeReminders].sort((a, b) => new Date(a.time) - new Date(b.time));
+
+            if (reminderTrend) {
+                if (reminderCount === 0) {
+                    reminderTrend.textContent = 'None set';
+                    reminderTrend.className = 'stat-trend neu';
+                } else {
+                    const nextReminder = sorted[0];
+                    const hoursLeft = Math.round((new Date(nextReminder.time) - new Date()) / (1000 * 60 * 60));
+                    if (hoursLeft < 1) {
+                        reminderTrend.textContent = 'Soon!';
+                        reminderTrend.className = 'stat-trend warn';
+                    } else if (hoursLeft < 24) {
+                        reminderTrend.textContent = `${hoursLeft}h left`;
+                        reminderTrend.className = 'stat-trend warn';
+                    } else {
+                        reminderTrend.textContent = `${Math.round(hoursLeft / 24)}d left`;
+                        reminderTrend.className = 'stat-trend up';
+                    }
+                }
+            }
+
+            const reminderList = document.getElementById('dashReminderList');
+            if (reminderList) {
+                const limit = sorted.slice(0, 5);
+                reminderList.innerHTML = limit.length === 0 
+                    ? '<p class="empty-state">No upcoming reminders</p>' 
+                    : limit.map(r => `
+                        <div class="dash-item">
+                            <span class="dash-item-icon">⏰</span>
+                            <div class="dash-item-info">
+                                <div class="dash-item-title">${r.title}</div>
+                                <div class="dash-item-time">${new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                            </div>
+                        </div>
+                    `).join('');
+            }
+        }
+
+        // Process Notes
+        if (notesRes.status === 'fulfilled') {
+            const notes = notesRes.value.data || [];
+            const dashNotesNum = document.getElementById('dashNotesNum');
+            const notesTrend = document.getElementById('notesTrend');
+            if (dashNotesNum) dashNotesNum.textContent = notes.length;
+            if (notesTrend) {
+                notesTrend.textContent = 'Updated';
+                notesTrend.className = 'stat-trend up';
+            }
+        }
+
+        // Global Progress
+        const globalProgressText = document.getElementById('globalProgressText');
+        const globalProgressFill = document.getElementById('globalProgressFill');
+        if (globalProgressText) globalProgressText.textContent = `${totalDone} / ${totalItems} done`;
+        if (globalProgressFill) {
+            const pct = totalItems === 0 ? 0 : Math.round((totalDone / totalItems) * 100);
+            globalProgressFill.style.width = pct + '%';
+        }
+
+        // Global UI updates (Streaks)
+        const habitsForStreak = (habitsRes.status === 'fulfilled' && habitsRes.value.data) ? habitsRes.value.data : [];
+        const streakVal = computeStreakFromHabits(habitsForStreak);
+        streak = streakVal; // Update global state
+        localStorage.setItem('streak', streakVal);
+        updateStreakDisplay();
+        
+        const userName = localStorage.getItem('gv_user_name') || 'User';
+
+        const usernameDisplay = document.getElementById('usernameDisplay');
+        if (usernameDisplay) usernameDisplay.textContent = userName;
+
+        const heroStreakNum = document.getElementById('heroStreakNum');
+        const heroStreakBadge = document.getElementById('heroStreakBadge');
+        if (heroStreakNum) heroStreakNum.textContent = streakVal;
+        if (heroStreakBadge) heroStreakBadge.textContent = badgeText(streakVal);
+
+        buildDots(Math.min(streakVal, 21));
+        updateRing(streakVal);
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
+    function initDash() {
         renderDateLine();
         refreshDash();
-    });
+    }
+
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', initDash);
+    } else {
+        initDash();
+    }
 }
 
 // ============================================================
 // TASKS PAGE
 // ============================================================
 if (page === 'tasks') {
-    const tasklist   = document.getElementById('tasklist');
-    const addTaskBtn = document.getElementById('addTaskBtn');
-    const taskinput  = document.getElementById('taskinput');
+    // ── Data helpers ──────────────────────────────────────────
+    let tasksData = [];
+    let editingTaskId = null;
     let activeFilter = 'all';
+
+    const priorityLabels = {
+        high:   { label: 'High',   class: 'priority-high' },
+        medium: { label: 'Medium', class: 'priority-medium' },
+        low:    { label: 'Low',    class: 'priority-low' }
+    };
+
+    async function fetchTasks() {
+        const lists = ['todo-list', 'doing-list', 'done-list'];
+        lists.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = `<div class="task-empty-msg">Loading...</div>`;
+        });
+        try {
+            const res = await apiFetch('/api/tasks');
+            if (res.data) {
+                tasksData = res.data.map(t => ({ ...t, id: t._id }));
+                renderTasks();
+            }
+        } catch (err) {
+            console.error('Failed to fetch tasks:', err);
+            const board = document.querySelector('.kanban-board');
+            if (board) board.innerHTML = `<div style="grid-column: 1/-1; text-align: center; color: #ef4444; padding: 40px;">Failed to load tasks. Please try again.</div>`;
+        }
+    }
 
     function getCountdownText(deadline) {
         if (!deadline) return '';
@@ -1194,183 +1168,249 @@ if (page === 'tasks') {
     }
 
     function updateTaskProgress() {
-        const freshTasks = getTasks();
-        const totalT     = freshTasks.length;
-        const doneT      = freshTasks.filter(t => t.status === 'completed').length;
-        const taskPct    = totalT === 0 ? 0 : Math.round((doneT / totalT) * 100);
-        const taskBar    = document.getElementById('taskProgressBar');
-        const taskCount  = document.getElementById('taskProgressCount');
-        if (taskBar)   { taskBar.style.width = taskPct + '%'; taskBar.textContent = taskPct + '%'; }
+        const totalT = tasksData.length;
+        const doneT  = tasksData.filter(t => t.status === 'done').length;
+        const taskPct = totalT === 0 ? 0 : Math.round((doneT / totalT) * 100);
+        const taskBar = document.getElementById('taskProgressBar');
+        const taskCount = document.getElementById('taskProgressCount');
+        if (taskBar) {
+            taskBar.style.width = taskPct + '%';
+            taskBar.textContent = taskPct + '%';
+        }
         if (taskCount) taskCount.textContent = `${doneT} of ${totalT} completed`;
     }
 
-    function saveTasks() {
-        localStorage.setItem('tasks', JSON.stringify(tasks));
-        loadTasks();
-    }
+    function renderTasks() {
+        const todoList = document.getElementById('todo-list');
+        const doingList = document.getElementById('doing-list');
+        const doneList = document.getElementById('done-list');
 
-    function loadTasks() {
-        tasks = getTasks();
-        tasklist.innerHTML = '';
+        if (!todoList || !doingList || !doneList) return;
 
-        const filtered = activeFilter === 'all'
-            ? tasks.filter(t => t.status !== 'completed')
-            : tasks.filter(t => t.category === activeFilter && t.status !== 'completed');
+        todoList.innerHTML = '';
+        doingList.innerHTML = '';
+        doneList.innerHTML = '';
 
-        if (filtered.length === 0) {
-            tasklist.innerHTML = `
-<li style="background:transparent;border:none;box-shadow:none;
-  justify-content:center;flex-direction:column;gap:6px;padding:30px 20px;">
-  <div style="font-size:2.5rem;text-align:center;">✅</div>
-  <div style="font-size:0.95rem;font-weight:600;color:var(--text-sub);
-    text-align:center;font-family:'Poppins',sans-serif;">
-    ${activeFilter === 'all' ? 'No pending tasks!' : `No ${activeFilter} tasks!`}
-  </div>
-  <div style="font-size:0.82rem;color:var(--text-muted);text-align:center;">
-    ${activeFilter === 'all' ? 'Add a task below to get started.' : `No pending tasks in <strong>${activeFilter}</strong>.`}
-  </div>
-</li>`;
-        }
+        const filteredTasks = activeFilter === 'all' 
+            ? tasksData 
+            : tasksData.filter(t => t.category === activeFilter);
 
-        filtered.forEach(task => {
-            const realIndex = tasks.indexOf(task);
-            const li        = document.createElement('li');
-            const now       = new Date(); now.setHours(0, 0, 0, 0);
-            const isOverdue = task.deadline && new Date(task.deadline) < now;
-            if (isOverdue) li.classList.add('overdue');
-            li.classList.add(task.priority);
+        const groups = {
+            todo: filteredTasks.filter(t => t.status === 'todo'),
+            doing: filteredTasks.filter(t => t.status === 'doing'),
+            done: filteredTasks.filter(t => t.status === 'done')
+        };
 
-            const countdown      = getCountdownText(task.deadline);
-            const countdownColor = countdown.startsWith('Overdue') ? '#e74c3c' : countdown === 'Due today!' ? '#e67e22' : '#27ae60';
+        Object.keys(groups).forEach(status => {
+            const list = document.getElementById(`${status}-list`);
+            const countEl = document.querySelector(`#col-${status} .column-count`);
+            if (countEl) countEl.textContent = groups[status].length;
 
-            li.innerHTML = `
-<div class="task-check" data-index="${realIndex}">
-  <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
-    <path d="M1 4L3.5 6.5L9 1" stroke="white" stroke-width="2"
-      stroke-linecap="round" stroke-linejoin="round"/>
-  </svg>
-</div>
-<span class="task-text">${task.text}</span>
-<span class="task-category-badge ${task.category || 'general'}">${task.category || 'general'}</span>
-${countdown ? `<span class="task-countdown" style="color:${countdownColor};">${countdown}</span>` : ''}
-<select class="task-status-select status-${task.status || 'not-started'}" data-index="${realIndex}">
-  <option value="not-started" ${!task.status || task.status === 'not-started' ? 'selected' : ''}>Not Started</option>
-  <option value="in-progress" ${task.status === 'in-progress' ? 'selected' : ''}>In Progress</option>
-  <option value="completed"   ${task.status === 'completed'   ? 'selected' : ''}>Completed</option>
-</select>
-<span class="task-delete" data-index="${realIndex}"
-  style="cursor:pointer;color:#aaa;margin-left:8px;font-size:12px;">✕</span>`;
-
-            if (task.status === 'completed') li.classList.add('done');
-
-            li.querySelector('.task-check').addEventListener('click', function () {
-                const i            = +this.dataset.index;
-                const wasCompleted = tasks[i].status === 'completed';
-                tasks[i].status    = wasCompleted ? 'not-started' : 'completed';
-                if (!wasCompleted) pushNotification('task', 'Task completed! ✅', `"${tasks[i].text}" has been marked as done.`);
-                saveTasks();
-                checkDailyCompletion();
-            });
-
-            li.querySelector('.task-delete').addEventListener('click', e => {
-                e.stopPropagation();
-                confirmDelete(`Delete "${task.text}"? This cannot be undone.`, () => {
-                    pushNotification('delete', 'Task deleted', `"${task.text}" was permanently removed from your tasks.`);
-                    tasks.splice(realIndex, 1);
-                    saveTasks();
-                    checkDailyCompletion();
+            if (groups[status].length === 0) {
+                list.innerHTML = `<div class="task-empty-msg">No tasks here</div>`;
+            } else {
+                groups[status].forEach(task => {
+                    list.appendChild(buildTaskItem(task));
                 });
-            });
-
-            li.querySelector('.task-status-select').addEventListener('change', function () {
-                const idx = +this.dataset.index;
-                tasks[idx].status = this.value;
-                const statusLabels = { 'in-progress': 'In Progress', 'completed': 'Completed', 'not-started': 'Not Started' };
-                pushNotification('task', 'Task status updated', `"${tasks[idx].text}" moved to ${statusLabels[this.value]}.`);
-                saveTasks();
-                checkDailyCompletion();
-            });
-
-            tasklist.appendChild(li);
-        });
-
-        // Completed history
-        let historyList = document.getElementById('completedHistory');
-        if (!historyList) {
-            historyList = document.createElement('div');
-            historyList.id = 'completedHistory';
-            tasklist.parentElement.appendChild(historyList);
-        }
-        historyList.innerHTML = `
-<h4 style="margin:20px 0 10px;font-size:0.82rem;text-transform:uppercase;
-  letter-spacing:1px;color:#888;font-family:'JetBrains Mono',monospace;">Completed</h4>`;
-
-        const completedTasks = tasks.filter(t => t.status === 'completed');
-        if (completedTasks.length === 0) {
-            historyList.innerHTML += `<p style="font-size:0.82rem;color:#bbb;padding:8px 0;font-family:'Inter',sans-serif;">No completed tasks yet.</p>`;
-        } else {
-            completedTasks.forEach(task => {
-                historyList.innerHTML += `
-<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
-  margin-bottom:6px;background:#f0faf4;border-radius:8px;border-left:4px solid #5cb85c;">
-  <span style="color:#5cb85c;font-size:14px;">✓</span>
-  <span style="font-size:0.88rem;color:#555;text-decoration:line-through;
-    font-family:'Inter',sans-serif;">${task.text}</span>
-  <span class="task-category-badge ${task.category || 'general'}"
-    style="margin-left:auto;">${task.category || 'general'}</span>
-</div>`;
-            });
-        }
-
-        document.querySelectorAll('.filter-btn').forEach(btn => {
-            btn.addEventListener('click', function () {
-                document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
-                this.classList.add('active');
-                activeFilter = this.getAttribute('data-filter');
-                loadTasks();
-            });
+            }
         });
 
         updateTaskProgress();
     }
 
-    addTaskBtn.addEventListener('click', () => {
-        const text     = taskinput.value.trim();
-        const deadline = document.getElementById('taskDeadline').value;
-        const priority = document.getElementById('prioritySelect').value;
-        const category = document.getElementById('categorySelect').value;
-        if (!text) return;
-        tasks.push({ text, priority, deadline, category, status: 'not-started', alerted: false, alertedFor: null });
-        pushNotification('task', 'New task added', `"${text}" was added to your ${category} tasks with ${priority} priority.`);
-        taskinput.value = '';
-        document.getElementById('taskDeadline').value = '';
-        saveTasks();
-    });
+    function buildTaskItem(task) {
+        const card = document.createElement('div');
+        card.className = `task-card ${task.priority} ${task.status === 'done' ? 'done' : ''}`;
+        card.dataset.id = task.id;
 
-    taskinput.addEventListener('keypress', e => { if (e.key === 'Enter') addTaskBtn.click(); });
+        const priorityInfo = priorityLabels[task.priority] || priorityLabels.medium;
+        const countdown = getCountdownText(task.deadline);
+        const overdueClass = countdown.startsWith('Overdue') ? 'overdue' : '';
+        
+        const desc = task.description || '';
+        const truncatedDesc = desc.length > 100 ? desc.substring(0, 100) + '...' : desc;
 
-    function checkDeadlineAlerts() {
-        const now = new Date(); now.setHours(0, 0, 0, 0);
-        let changed = false;
-        tasks.forEach(task => {
-            if (!task.deadline || task.status === 'completed') return;
-            const dueDate    = new Date(task.deadline);
-            const dueDateStr = task.deadline;
-            if (task.alertedFor && task.alertedFor !== dueDateStr) { task.alerted = false; task.alertedFor = null; changed = true; }
-            if (!task.alerted && dueDate <= now) {
-                const diff = Math.round((dueDate - now) / (1000 * 60 * 60 * 24));
-                const msg  = diff === 0 ? `📅 "${task.text}" is due TODAY!` : `⚠️ "${task.text}" is overdue by ${Math.abs(diff)} day${Math.abs(diff) === 1 ? '' : 's'}!`;
-                showToast(msg, diff === 0 ? 'warning' : 'error');
-                pushNotification('task', diff === 0 ? 'Task due today!' : 'Task overdue!', msg);
-                task.alerted = true; task.alertedFor = dueDateStr; changed = true;
-            }
+        let moveBtns = '';
+        if (task.status === 'todo') {
+            moveBtns = `<button class="task-btn move-doing" data-id="${task.id}">Start</button>`;
+        } else if (task.status === 'doing') {
+            moveBtns = `
+                <button class="task-btn move-todo" data-id="${task.id}">Back</button>
+                <button class="task-btn move-done" data-id="${task.id}">Finish</button>
+            `;
+        } else if (task.status === 'done') {
+            moveBtns = `<button class="task-btn move-doing" data-id="${task.id}">Reopen</button>`;
+        }
+
+        card.innerHTML = `
+            <div class="task-card-header">
+                <div class="task-card-title">${task.title}</div>
+                <div class="task-badge ${priorityInfo.class}">${priorityInfo.label}</div>
+            </div>
+            ${truncatedDesc ? `<div class="task-card-desc">${truncatedDesc}</div>` : ''}
+            <div class="task-card-meta">
+                ${task.deadline ? `<div class="task-card-deadline ${overdueClass}"><i class='bx bx-calendar'></i> ${new Date(task.deadline).toLocaleDateString()}</div>` : ''}
+                <div class="task-category-badge ${task.category || 'general'}">${task.category || 'general'}</div>
+            </div>
+            <div class="task-card-actions">
+                <div class="task-move-btns">${moveBtns}</div>
+                <div class="task-card-ctrls">
+                    <button class="task-btn edit-task" data-id="${task.id}">Edit</button>
+                    <button class="task-btn delete delete-task" data-id="${task.id}">✕</button>
+                </div>
+            </div>
+        `;
+
+        // Attach listeners
+        card.querySelector('.delete-task').addEventListener('click', (e) => {
+            e.stopPropagation();
+            confirmDelete(`Delete "${task.title}"?`, () => deleteTask(task.id));
         });
-        if (changed) localStorage.setItem('tasks', JSON.stringify(tasks));
+        
+        card.querySelector('.edit-task').addEventListener('click', (e) => {
+            e.stopPropagation();
+            openEditTask(task);
+        });
+        
+        if (task.status === 'todo') {
+            card.querySelector('.move-doing').addEventListener('click', () => updateTaskStatus(task.id, 'doing'));
+        } else if (task.status === 'doing') {
+            card.querySelector('.move-todo').addEventListener('click', () => updateTaskStatus(task.id, 'todo'));
+            card.querySelector('.move-done').addEventListener('click', () => updateTaskStatus(task.id, 'done'));
+        } else if (task.status === 'done') {
+            card.querySelector('.move-doing').addEventListener('click', () => updateTaskStatus(task.id, 'doing'));
+        }
+
+        return card;
     }
 
-    loadTasks();
-    checkDeadlineAlerts();
-    setInterval(checkDeadlineAlerts, 60000);
+    async function updateTaskStatus(id, newStatus) {
+        try {
+            const task = tasksData.find(t => t.id === id);
+            if (!task) return;
+
+            const res = await apiFetch(`/api/tasks/${id}`, {
+                method: 'PUT',
+                body: { ...task, status: newStatus }
+            });
+
+            if (res.success) {
+                const updatedTask = { ...res.data, id: res.data._id };
+                const idx = tasksData.findIndex(t => t.id === id);
+                if (idx !== -1) tasksData[idx] = updatedTask;
+                
+                if (newStatus === 'done') {
+                    pushNotification('task', 'Task completed! ✅', `"${updatedTask.title}" has been moved to Done.`);
+                }
+                
+                renderTasks();
+            }
+        } catch (err) {
+            console.error('Failed to update task status:', err);
+            showToast('Failed to update status', 'error');
+        }
+    }
+
+    async function deleteTask(id) {
+        try {
+            const res = await apiFetch(`/api/tasks/${id}`, { method: 'DELETE' });
+            if (res.success) {
+                tasksData = tasksData.filter(t => t.id !== id);
+                renderTasks();
+                pushNotification('delete', 'Task deleted', 'Task has been removed.');
+            }
+        } catch (err) {
+            console.error('Failed to delete task:', err);
+            showToast('Failed to delete task', 'error');
+        }
+    }
+
+    function openEditTask(task) {
+        editingTaskId = task.id;
+        document.getElementById('taskinput').value = task.title;
+        document.getElementById('prioritySelect').value = task.priority;
+        document.getElementById('categorySelect').value = task.category || 'general';
+        document.getElementById('taskDeadline').value = task.deadline ? task.deadline.split('T')[0] : '';
+        
+        const addBtn = document.getElementById('addTaskBtn');
+        if (addBtn) addBtn.textContent = 'Update Task';
+        
+        document.getElementById('taskinput').focus();
+        document.getElementById('taskinput').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    const addTaskBtn = document.getElementById('addTaskBtn');
+    const taskinput = document.getElementById('taskinput');
+
+    if (addTaskBtn) {
+        addTaskBtn.addEventListener('click', async () => {
+            const title = taskinput.value.trim();
+            const priority = document.getElementById('prioritySelect').value;
+            const category = document.getElementById('categorySelect').value;
+            const deadline = document.getElementById('taskDeadline').value;
+            const errEl = document.getElementById('taskInputError');
+
+            if (!title) {
+                if (errEl) errEl.style.display = 'block';
+                return;
+            }
+            if (errEl) errEl.style.display = 'none';
+
+            try {
+                if (editingTaskId) {
+                    const task = tasksData.find(t => t.id === editingTaskId);
+                    const res = await apiFetch(`/api/tasks/${editingTaskId}`, {
+                        method: 'PUT',
+                        body: { ...task, title, priority, category, deadline }
+                    });
+                    if (res.success) {
+                        const updated = { ...res.data, id: res.data._id };
+                        const idx = tasksData.findIndex(t => t.id === editingTaskId);
+                        if (idx !== -1) tasksData[idx] = updated;
+                        editingTaskId = null;
+                        addTaskBtn.textContent = 'Add Task';
+                        pushNotification('task', 'Task updated', `"${title}" has been updated.`);
+                    }
+                } else {
+                    const res = await apiFetch('/api/tasks', {
+                        method: 'POST',
+                        body: { title, priority, category, deadline, status: 'todo' }
+                    });
+                    if (res.success) {
+                        const newTask = { ...res.data, id: res.data._id };
+                        tasksData.unshift(newTask);
+                        pushNotification('task', 'New task added', `"${title}" was added to your list.`);
+                    }
+                }
+                
+                taskinput.value = '';
+                document.getElementById('taskDeadline').value = '';
+                renderTasks();
+            } catch (err) {
+                console.error('Failed to save task:', err);
+                showToast('Failed to save task', 'error');
+            }
+        });
+    }
+
+    if (taskinput) {
+        taskinput.addEventListener('keypress', e => { if (e.key === 'Enter') addTaskBtn.click(); });
+    }
+
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            activeFilter = this.getAttribute('data-filter');
+            renderTasks();
+        });
+    });
+
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', fetchTasks);
+    } else {
+        fetchTasks();
+    }
 }
 
 // ============================================================
@@ -1398,35 +1438,60 @@ if (page === 'habits') {
         const firstDay    = new Date(year, month, 1).getDay();
         const daysInMonth = new Date(year, month + 1, 0).getDate();
         for (let i = 0; i < firstDay; i++) calGrid.appendChild(document.createElement('div'));
+        const activeDays = new Set();
+        habitsData.forEach(h => {
+            (h.completedDates || []).forEach(d => {
+                activeDays.add(getLocalYYYYMMDD(new Date(d)));
+            });
+        });
+
         for (let day = 1; day <= daysInMonth; day++) {
             const dayDiv  = document.createElement('div');
             const dateStr = `${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
             dayDiv.innerText = day;
-            dayDiv.classList.add('cal-d', localStorage.getItem(`completed_${dateStr}`) ? 'done' : 'plain');
+            dayDiv.classList.add('cal-d', activeDays.has(dateStr) ? 'done' : 'plain');
             if (dateStr === todayStr) dayDiv.classList.add('today');
             calGrid.appendChild(dayDiv);
         }
-        const completedDays = Object.keys(localStorage).filter(k => k.startsWith('completed_')).length;
+        
+        const completedDays = activeDays.size;
+        const currentStreak = computeStreakFromHabits(habitsData);
+        streak = currentStreak;
+        localStorage.setItem('streak', streak);
+        
+        updateStreakDisplay(); // update the top nav icon and right panel
+        
+        const habitStreakTxt = document.getElementById('habitSreakText');
+        if (habitStreakTxt) habitStreakTxt.textContent = `You are on a ${streak}-day winning streak today`;
+
         const greenVal = document.querySelector('.cs-val.green');
         const blueVal  = document.querySelector('.cs-val.blue');
         if (greenVal) greenVal.textContent = completedDays;
-        if (blueVal)  blueVal.textContent  = streak;
+        if (blueVal)  blueVal.textContent  = currentStreak;
     }
 
-    function saveHabits() { localStorage.setItem('habits', JSON.stringify(habits)); }
+    let habitsData = [];
+    let editingHabitId = null;
 
-    function resetMissedHabitStreaks() {
-        const today     = getTodayString();
-        const yesterday = getYesterdayString();
-        const lastDate  = localStorage.getItem('lastHabitDate');
-        if (!lastDate || lastDate === today) return;
-        if (lastDate !== yesterday) {
-            habits = habits.map(h => ({ ...h, done: false, streak: 0 }));
-        } else {
-            habits = habits.map(h => ({ ...h, done: false }));
+
+    async function fetchHabits() {
+        if (habitContainer) habitContainer.innerHTML = `<div class="loading-state">Loading habits...</div>`;
+        try {
+            const res = await apiFetch('/api/habits');
+            if (res.data) habitsData = res.data.map(h => ({ ...h, id: h._id }));
+            loadHabits();
+            renderCalendar(); // render calendar with real API data
+        } catch (err) {
+            console.error(err);
+            habitContainer.innerHTML = `<div style="color:#ef4444;text-align:center;padding:20px;">Failed to load habits.</div>`;
         }
-        saveHabits();
-        localStorage.setItem('lastHabitDate', today);
+    }
+
+    function isHabitCompletedToday(habit) {
+        const todayStr = getLocalYYYYMMDD();
+        return (habit.completedDates || []).some(d => {
+            return getLocalYYYYMMDD(new Date(d)) === todayStr;
+        });
     }
 
     function updateWeeklyChart() {
@@ -1437,7 +1502,7 @@ if (page === 'habits') {
         barCols.forEach((col, i) => {
             const d = new Date(today);
             d.setDate(today.getDate() - (6 - i));
-            const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const dateStr = getLocalYYYYMMDD(d);
             const pct   = parseInt(localStorage.getItem(`habitHistory_${dateStr}`)) || 0;
             const bar   = col.querySelector('.bar');
             const label = col.querySelector('.bar-day');
@@ -1446,33 +1511,115 @@ if (page === 'habits') {
         });
         const perfPct = document.querySelector('#habitSection .perf-pct');
         if (perfPct) {
-            const pct = habits.length === 0 ? 0 : Math.round((habits.filter(h => h.done).length / habits.length) * 100);
+            const pct = habitsData.length === 0 ? 0 : Math.round((habitsData.filter(h => isHabitCompletedToday(h)).length / habitsData.length) * 100);
             perfPct.textContent = pct + '%';
         }
     }
 
-    function loadHabits() {
-        habits = getHabits();
-        habitContainer.innerHTML = '';
-        const todayStr = getTodayString();
-        resetMissedHabitStreaks();
-        if (localStorage.getItem('lastHabitDate') !== todayStr) localStorage.setItem('lastHabitDate', todayStr);
+    function buildHabitItem(habit) {
+        const freqLabels = { daily: 'Daily', weekdays: 'Weekdays', weekends: 'Weekends' };
+        const completedToday = isHabitCompletedToday(habit);
 
-        const pending      = habits.filter(h => !h.done).length;
+        const card = document.createElement('div');
+        card.className = `habit-card ${completedToday ? 'habit-completed' : ''}`;
+        card.dataset.id = habit.id;
+
+        let streakClass = 'streak-cold';
+        const streak = habit.currentstreak || 0;
+        if (streak >= 3)  streakClass = 'streak-warm';
+        if (streak >= 7)  streakClass = 'streak-hot';
+        if (streak >= 14) streakClass = 'streak-fire';
+
+        const r         = 15;
+        const circ      = 2 * Math.PI * r;
+        const pct       = completedToday ? 100 : 0;
+        const offset    = circ - (pct / 100) * circ;
+        const ringColor = completedToday ? '#5cb85c' : '#378ADD';
+        
+        const freqLabel = freqLabels[habit.frequency] || 'Daily';
+        const reminderTxt = habit.reminderTime ? ` · ⏰ ${habit.reminderTime}` : '';
+
+        card.innerHTML = `
+<div class="habit-icon ${streakClass}">${habit.icon || '🌟'}</div>
+<div class="habit-info">
+  <div class="habit-name">${habit.name}</div>
+  <div class="habit-streak">🔥 ${streak} Day Streak <span style="color:#aaa;font-size:11px;">(Best: ${habit.higheststreak || 0})</span><br><span class="freq" style="font-size:11px;">• ${freqLabel}${reminderTxt}</span></div>
+</div>
+<div class="habit-ring-wrap">
+  <svg width="36" height="36" viewBox="0 0 36 36">
+    <circle class="habit-ring-bg" cx="18" cy="18" r="${r}"/>
+    <circle class="habit-ring-fill" cx="18" cy="18" r="${r}"
+      stroke="${ringColor}" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
+  </svg>
+  <span class="habit-ring-label">${pct}%</span>
+</div>
+<button class="${completedToday ? 'btn-done' : 'btn-mark'} complete-btn" data-id="${habit.id}" ${completedToday ? 'disabled' : ''}>
+  ${completedToday ? '✓ Done' : 'Mark done'}
+</button>
+<div class="habit-actions" style="display:flex; flex-direction:column; gap:4px; margin-left:8px;">
+    <span class="habit-edit" style="cursor:pointer;color:#3b82f6;font-size:13px;" title="Edit">✏️</span>
+    <span class="habit-delete" style="cursor:pointer;color:#ef4444;font-size:13px;" title="Delete">✕</span>
+</div>`;
+
+        card.querySelector('.complete-btn').addEventListener('click', async function() {
+            if (completedToday) return;
+            try {
+                const res = await apiFetch(`/api/habits/${habit.id}/complete`, { method: 'PATCH' });
+                const updatedHabit = { ...res.data, id: res.data._id };
+                const idx = habitsData.findIndex(h => h.id === habit.id);
+                if (idx !== -1) {
+                    habitsData[idx] = updatedHabit;
+                    loadHabits();
+                    renderCalendar();
+                    
+                    if (updatedHabit.currentstreak > streak) {
+                        pushNotification('streak', `${updatedHabit.currentstreak}-day habit streak! 🔥`, `You've kept "${updatedHabit.name}" going for ${updatedHabit.currentstreak} days straight!`);
+                    }
+                }
+            } catch(err) {
+                showToast('Failed to complete habit', 'error');
+            }
+        });
+
+        card.querySelector('.habit-edit').addEventListener('click', () => {
+            editingHabitId = habit.id;
+            document.getElementById('habitInput').value = habit.name;
+            const freqInput = document.getElementById('habitFreqInput');
+            if (freqInput) freqInput.value = habit.frequency || 'daily';
+            document.getElementById('addHabitBtn').innerHTML = '💾';
+            const errEl = document.getElementById('habitInputError');
+            if (errEl) errEl.style.display = 'none';
+        });
+
+        card.querySelector('.habit-delete').addEventListener('click', () => {
+            confirmDelete(`Delete "${habit.name}"? Your streak will be lost.`, async () => {
+                try {
+                    await apiFetch(`/api/habits/${habit.id}`, { method: 'DELETE' });
+                    habitsData = habitsData.filter(h => h.id !== habit.id);
+                    pushNotification('delete', 'Habit deleted', `"${habit.name}" has been removed.`);
+                    loadHabits();
+                } catch(err) {
+                    showToast('Failed to delete habit', 'error');
+                }
+            });
+        });
+
+        return card;
+    }
+
+    function loadHabits() {
+        habitContainer.innerHTML = '';
+        
+        const pending = habitsData.filter(h => !isHabitCompletedToday(h)).length;
         const pendingBadge = document.getElementById('pendingBadge');
         if (pendingBadge) pendingBadge.textContent = `${pending} PENDING TODAY`;
 
-        const habitStreakText = document.getElementById('habitSreakText');
-        if (habitStreakText) habitStreakText.textContent = streak > 0
-            ? `You're on a ${streak}-day winning streak! 🔥`
-            : `Start your streak today — complete all habits!`;
-
-        const totalHabits = habits.length;
-        const doneToday   = habits.filter(h => h.done).length;
+        const totalHabits = habitsData.length;
+        const doneToday   = totalHabits - pending;
         const todayPct    = totalHabits === 0 ? 0 : Math.round((doneToday / totalHabits) * 100);
-        localStorage.setItem(`habitHistory_${todayStr}`, todayPct);
+        localStorage.setItem(`habitHistory_${getLocalYYYYMMDD()}`, todayPct);
 
-        if (habits.length === 0) {
+        if (habitsData.length === 0) {
             habitContainer.innerHTML = `
 <div style="text-align:center;padding:40px 20px;color:var(--text-muted);font-family:'Inter',sans-serif;">
   <div style="font-size:2.5rem;margin-bottom:12px;">🌱</div>
@@ -1483,62 +1630,8 @@ if (page === 'habits') {
             return;
         }
 
-        habits.forEach((habit, index) => {
-            const card = document.createElement('div');
-            card.className = `habit-card ${habit.done ? 'habit-completed' : ''}`;
-            let streakClass = 'streak-cold';
-            if (habit.streak >= 3)  streakClass = 'streak-warm';
-            if (habit.streak >= 7)  streakClass = 'streak-hot';
-            if (habit.streak >= 14) streakClass = 'streak-fire';
-            const r         = 15;
-            const circ      = 2 * Math.PI * r;
-            const pct       = habit.done ? 100 : 0;
-            const offset    = circ - (pct / 100) * circ;
-            const ringColor = habit.done ? '#5cb85c' : '#378ADD';
-
-            card.innerHTML = `
-<div class="habit-icon ${streakClass}">${habit.icon || '🌟'}</div>
-<div class="habit-info">
-  <div class="habit-name">${habit.text}</div>
-  <div class="habit-streak">🔥 ${habit.streak || 0} Day Streak<span class="freq">• Daily</span></div>
-</div>
-<div class="habit-ring-wrap">
-  <svg width="36" height="36" viewBox="0 0 36 36">
-    <circle class="habit-ring-bg" cx="18" cy="18" r="${r}"/>
-    <circle class="habit-ring-fill" cx="18" cy="18" r="${r}"
-      stroke="${ringColor}" stroke-dasharray="${circ}" stroke-dashoffset="${offset}"/>
-  </svg>
-  <span class="habit-ring-label">${pct}%</span>
-</div>
-<button class="${habit.done ? 'btn-done' : 'btn-mark'}" ${habit.done ? 'disabled' : ''}>
-  ${habit.done ? '✓ Done' : 'Mark done'}
-</button>
-<span class="habit-delete" style="cursor:pointer;color:#aaa;margin-left:8px;font-size:13px;">✕</span>`;
-
-            card.querySelector('button').addEventListener('click', function () {
-                if (habits[index].done) return;
-                habits[index].done   = true;
-                habits[index].streak = (habits[index].streak || 0) + 1;
-                pushNotification('habit', 'Habit completed! 🎉', `"${habit.text}" done for today. ${habits[index].streak} day streak!`);
-                const milestones = [7, 14, 21, 30, 60, 100];
-                if (milestones.includes(habits[index].streak)) {
-                    pushNotification('streak', `${habits[index].streak}-day habit streak! 🔥`, `You've kept "${habit.text}" going for ${habits[index].streak} days straight!`);
-                }
-                saveHabits();
-                loadHabits();
-                checkDailyCompletion();
-            });
-
-            card.querySelector('.habit-delete').addEventListener('click', () => {
-                confirmDelete(`Delete "${habit.text}"? Your streak will be lost.`, () => {
-                    pushNotification('delete', 'Habit deleted', `"${habit.text}" and its ${habit.streak || 0}-day streak have been removed.`);
-                    habits.splice(index, 1);
-                    saveHabits();
-                    loadHabits();
-                });
-            });
-
-            habitContainer.appendChild(card);
+        habitsData.forEach(habit => {
+            habitContainer.appendChild(buildHabitItem(habit));
         });
 
         updateWeeklyChart();
@@ -1549,7 +1642,7 @@ if (page === 'habits') {
             habitHistory.id = 'completedHabitHistory';
             habitContainer.parentElement.appendChild(habitHistory);
         }
-        const completedHabits = habits.filter(h => h.done);
+        const completedHabits = habitsData.filter(h => isHabitCompletedToday(h));
         habitHistory.innerHTML = `
 <h4 style="margin:24px 0 10px;font-size:0.78rem;text-transform:uppercase;letter-spacing:1px;
   color:#888;font-family:'JetBrains Mono',monospace;">Completed Today</h4>`;
@@ -1563,9 +1656,9 @@ if (page === 'habits') {
   <span style="font-size:16px;">${habit.icon || '🌟'}</span>
   <div style="flex:1;">
     <div style="font-size:0.88rem;color:#555;font-weight:600;text-decoration:line-through;
-      font-family:'Poppins',sans-serif;">${habit.text}</div>
+      font-family:'Poppins',sans-serif;">${habit.name}</div>
     <div style="font-size:0.75rem;color:#5cb85c;margin-top:2px;font-family:'Inter',sans-serif;">
-      🔥 ${habit.streak} day streak
+      🔥 ${habit.currentstreak || 0} day streak
     </div>
   </div>
   <span style="color:#5cb85c;font-size:16px;font-weight:700;">✓</span>
@@ -1576,7 +1669,7 @@ if (page === 'habits') {
         const pastDays = [];
         for (let i = 1; i <= 6; i++) {
             const d = new Date(); d.setDate(d.getDate() - i);
-            const dateStr = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+            const dateStr = getLocalYYYYMMDD(d);
             const p = parseInt(localStorage.getItem(`habitHistory_${dateStr}`)) || 0;
             if (p > 0) pastDays.push({ dateStr, pct: p, d });
         }
@@ -1635,14 +1728,51 @@ if (page === 'habits') {
         return '🌟';
     }
 
-    addHabitBtn.addEventListener('click', () => {
-        const text = habitInput.value.trim();
-        if (!text) return;
-        habits.push({ text, done: false, streak: 0, icon: getHabitEmoji(text), freq: 'Daily' });
-        pushNotification('habit', 'New habit created 🌱', `"${text}" has been added to your daily habits. Stay consistent!`);
-        habitInput.value = '';
-        saveHabits();
-        loadHabits();
+    addHabitBtn.addEventListener('click', async () => {
+        const name = habitInput.value.trim();
+        const freqInput = document.getElementById('habitFreqInput');
+        const frequency = freqInput ? freqInput.value : 'daily';
+        const errEl = document.getElementById('habitInputError');
+        
+        if (!name || !frequency) {
+            if (errEl) errEl.style.display = 'block';
+            return;
+        }
+        if (errEl) errEl.style.display = 'none';
+
+        try {
+            if (editingHabitId) {
+                const res = await apiFetch(`/api/habits/${editingHabitId}`, {
+                    method: 'PUT',
+                    body: { name, frequency, icon: getHabitEmoji(name) }
+                });
+                const updatedHabit = { ...res.data, id: res.data._id };
+                const idx = habitsData.findIndex(h => h.id === editingHabitId);
+                if (idx !== -1) {
+                    habitsData[idx] = updatedHabit;
+                    const card = document.querySelector(`.habit-card[data-id="${editingHabitId}"]`);
+                    if (card) {
+                        card.replaceWith(buildHabitItem(updatedHabit));
+                    }
+                }
+                editingHabitId = null;
+                document.getElementById('addHabitBtn').innerHTML = '+';
+                pushNotification('habit', 'Habit updated', `"${name}" has been updated.`);
+            } else {
+                const res = await apiFetch('/api/habits', {
+                    method: 'POST',
+                    body: { name, frequency, icon: getHabitEmoji(name) }
+                });
+                const newHabit = { ...res.data, id: res.data._id };
+                habitsData.unshift(newHabit);
+                loadHabits();
+                pushNotification('habit', 'New habit created 🌱', `"${name}" has been added to your habits.`);
+            }
+            habitInput.value = '';
+            if (freqInput) freqInput.value = 'daily';
+        } catch (err) {
+            showToast('Failed to save habit', 'error');
+        }
     });
 
     habitInput.addEventListener('keypress', e => { if (e.key === 'Enter') addHabitBtn.click(); });
@@ -1664,11 +1794,16 @@ if (page === 'habits') {
         renderCalendar();
     });
 
-    window.addEventListener('DOMContentLoaded', () => {
-        loadHabits();
+    function initHabits() {
+        fetchHabits();
         renderCalendar();
         updateStreakPanel();
-    });
+    }
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', initHabits);
+    } else {
+        initHabits();
+    }
 }
 
 // ============================================================
@@ -1677,12 +1812,22 @@ if (page === 'habits') {
 if (page === 'planner') {
 
     // ── Data helpers ──────────────────────────────────────────
-    function getPlannerGoals() {
-        return JSON.parse(localStorage.getItem('plannerGoals') || '[]');
+    let plannerGoals = [];
+    async function fetchGoals() {
+        const list = document.getElementById('plannerList');
+        if (list) list.innerHTML = `<div class="planner-empty">Loading goals...</div>`;
+        try {
+            const res = await apiFetch('/api/goals');
+            if (res.data) plannerGoals = res.data.map(g => ({...g, id: g._id}));
+            renderGoals(currentTab);
+        } catch(e) {
+            console.error(e);
+            const list = document.getElementById('plannerList');
+            if (list) list.innerHTML = `<div class="planner-empty" style="color:#ef4444;">Failed to load goals. Please try again.</div>`;
+        }
     }
-    function savePlannerGoals(goals) {
-        localStorage.setItem('plannerGoals', JSON.stringify(goals));
-    }
+    function getPlannerGoals() { return plannerGoals; }
+    function savePlannerGoals(goals) { plannerGoals = goals; }
 
     // ── State ─────────────────────────────────────────────────
     let shortPriority  = 'low';
@@ -1690,6 +1835,7 @@ if (page === 'planner') {
     let shortFreq      = 'daily';
     let longFreq       = 'daily';
     let updateTargetId = null;
+    let editingGoalId  = null;
     let currentTab     = 'all';
 
     const DAY_NAMES = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -1713,37 +1859,29 @@ if (page === 'planner') {
         };
     }
 
-    function addReminderForGoal(goalId, goalName, freq, dateStr, timeStr) {
-        const reminder = buildReminderFromGoal(goalId, goalName, freq, dateStr, timeStr);
-        if (!reminder) return null;
-        const reminders = getReminders();
-        reminders.push(reminder);
-        localStorage.setItem('reminders', JSON.stringify(reminders));
-        scheduleGoalReminder(reminder);
-        return reminder;
+    async function addReminderForGoal(goalId, goalName, freq, dateStr, timeStr) {
+        if (!dateStr || !timeStr) return;
+        const body = {
+            title: `Goal: ${goalName}`,
+            datetime: `${dateStr}T${timeStr}`,
+            recurring: freq !== 'once',
+            recurrenceType: freq !== 'once' ? freq : null,
+            notes: `Reminder for goal ${goalId}`,
+            category: 'goal'
+        };
+        try {
+            await apiFetch('/api/reminders', { method: 'POST', body });
+        } catch (e) {
+            console.error('Failed to add goal reminder:', e);
+        }
     }
 
     function removeGoalReminders(goalId) {
-        const reminders = getReminders().filter(r => r.goalId !== goalId);
-        localStorage.setItem('reminders', JSON.stringify(reminders));
+        // Since the backend doesn't track goalId, we'd need to fetch and filter by notes.
+        // For now, we'll skip this to avoid accidental deletion of other reminders.
+        console.log(`Requested removal of reminders for goal ${goalId}`);
     }
 
-    function scheduleGoalReminder(reminder) {
-        const reminderTime = new Date(reminder.time);
-        const delay        = reminderTime - new Date();
-        if (delay <= 0) return;
-        setTimeout(() => {
-            const updated = getReminders();
-            const r       = updated.find(rem => rem.id === reminder.id);
-            if (r) { r.triggered = true; localStorage.setItem('reminders', JSON.stringify(updated)); }
-            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                try { new Notification('⏰ Goal Vault Reminder', { body: `Goal: ${reminder.label}` }); }
-                catch (e) { /* silent */ }
-            }
-            pushNotification('reminder', 'Goal reminder fired! ⏰', `Reminder for your goal: "${reminder.label}"`);
-            showToast(`⏰ Goal reminder: ${reminder.label}`, 'warning');
-        }, delay);
-    }
 
     function buildReminderPreview(freq, dateStr, timeStr) {
         if (!dateStr || !timeStr) return null;
@@ -1843,6 +1981,7 @@ if (page === 'planner') {
   <div class="planner-goal-meta">
     ${goal.description ? `<span class="planner-goal-desc">${goal.description}</span>` : ''}
     ${isLong && goal.targetValue ? `<span class="planner-goal-detail"><i class="fa-solid fa-bullseye"></i>${goal.targetValue}</span>` : ''}
+    ${isLong && goal.targetAmount ? `<span class="planner-goal-detail" style="color:var(--accent-2);font-weight:700;"><i class="fa-solid fa-ghs"></i>₵${parseFloat(goal.targetAmount).toLocaleString()}</span>` : ''}
     ${deadline ? `<span class="planner-goal-detail" style="color:${deadline.color};"><i class="fa-solid fa-calendar"></i>${deadline.text}</span>` : ''}
     ${hasReminder ? `<span class="planner-goal-detail" style="color:#7c3aed;"><i class="fa-solid fa-bell"></i>${goal.reminderFreq ? goal.reminderFreq.charAt(0).toUpperCase() + goal.reminderFreq.slice(1) : 'Reminder set'}</span>` : ''}
     ${isLong && logCount > 0 ? `<span class="planner-goal-detail" style="color:var(--accent-2);"><i class="fa-solid fa-clock-rotate-left"></i>${logCount} update${logCount === 1 ? '' : 's'}</span>` : ''}
@@ -1871,6 +2010,9 @@ if (page === 'planner') {
     <button class="planner-action-btn complete-btn" data-action="complete" data-id="${goal.id}" title="Mark complete">
       <i class="fa-solid fa-check"></i>
     </button>` : ''}
+    <button class="planner-action-btn edit-btn" data-action="edit" data-id="${goal.id}" title="Edit" style="color:#3b82f6;">
+      <i class="fa-solid fa-pen"></i>
+    </button>
     <button class="planner-action-btn danger" data-action="delete" data-id="${goal.id}" title="Delete">
       <i class="fa-solid fa-xmark"></i>
     </button>
@@ -1881,42 +2023,72 @@ if (page === 'planner') {
             btn.addEventListener('click', function (e) {
                 e.stopPropagation();
                 const action = this.dataset.action;
-                const id     = +this.dataset.id;
+                const id     = this.dataset.id;
 
                 if (action === 'delete') {
                     const g = getPlannerGoals().find(x => x.id === id);
-                    confirmDelete(`Delete "${g?.title || g?.text}"? This cannot be undone.`, () => {
-                        removeGoalReminders(id);
-                        const updated = getPlannerGoals().filter(x => x.id !== id);
-                        savePlannerGoals(updated);
-                        pushNotification('delete', 'Goal deleted', `"${g?.title || g?.text}" and its reminders were removed.`);
-                        renderGoals(currentTab);
+                    confirmDelete(`Delete "${g?.title || g?.text}"? This cannot be undone.`, async () => {
+                        try {
+                            await apiFetch(`/api/goals/${id}`, { method: 'DELETE' });
+                            removeGoalReminders(id);
+                            plannerGoals = plannerGoals.filter(x => x.id !== id);
+                            pushNotification('delete', 'Goal deleted', `"${g?.title || g?.text}" was removed.`);
+                            renderGoals(currentTab);
+                        } catch (err) {
+                            showToast('Failed to delete goal', 'error');
+                        }
                     });
                 }
 
                 if (action === 'complete') {
-                    const goals = getPlannerGoals();
-                    const g     = goals.find(x => x.id === id);
+                    const g = getPlannerGoals().find(x => x.id === id);
                     if (g) {
-                        g.status   = 'completed';
-                        g.progress = 100;
-                        // Add a completion log entry if none exists
-                        if (!g.progressLog) g.progressLog = [];
-                        g.progressLog.unshift({
-                            pct:  100,
-                            prev: g.progress || 0,
-                            note: '🏆 Goal marked as complete!',
-                            date: new Date().toISOString(),
-                        });
-                        savePlannerGoals(goals);
-                        pushNotification('goal', 'Goal completed! 🎉', `"${g.title || g.text}" marked as complete. Well done!`);
-                        showToast(`Goal completed! 🎉`, 'success');
-                        renderGoals(currentTab);
+                        apiFetch(`/api/goals/${id}`, {
+                            method: 'PUT',
+                            body: { ...g, status: 'completed', progress: 100 }
+                        }).then(() => {
+                            g.status   = 'completed';
+                            g.progress = 100;
+                            if (!g.progressLog) g.progressLog = [];
+                            g.progressLog.unshift({
+                                pct:  100,
+                                prev: g.progress || 0,
+                                note: '🏆 Goal marked as complete!',
+                                date: new Date().toISOString(),
+                            });
+                            pushNotification('goal', 'Goal completed! 🎉', `"${g.title || g.text}" marked as complete. Well done!`);
+                            showToast(`Goal completed! 🎉`, 'success');
+                            renderGoals(currentTab);
+                        }).catch(() => showToast('Failed to complete goal', 'error'));
                     }
                 }
 
                 if (action === 'update') {
                     openUpdateModal(id);
+                }
+
+                if (action === 'edit') {
+                    const g = getPlannerGoals().find(x => x.id === id);
+                    if (!g) return;
+                    editingGoalId = id;
+                    if (g.type === 'short') {
+                        document.getElementById('shortGoalText').value = g.title || g.text || '';
+                        document.getElementById('shortGoalDesc').value = g.description || '';
+                        document.getElementById('shortGoalDay').value = g.day || '';
+                        document.getElementById('createShortGoalBtn').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Changes';
+                        document.querySelector('#shortTermOverlay .goal-modal-title').textContent = 'Edit Short-Term Goal ⚡';
+                        openOverlay('shortTermOverlay');
+                    } else {
+                        document.getElementById('longGoalTitle').value = g.title || g.text || '';
+                        document.getElementById('longGoalDesc').value = g.description || '';
+                        document.getElementById('longGoalTargetValue').value = g.targetValue || '';
+                        document.getElementById('longGoalTargetAmount').value = g.targetAmount || '';
+                        document.getElementById('longGoalDeadline').value = g.deadline ? g.deadline.split('T')[0] : '';
+                        document.getElementById('longGoalInitProgress').value = g.progress || 0;
+                        document.getElementById('createLongGoalBtn').innerHTML = '<i class="fa-solid fa-floppy-disk"></i> Save Changes';
+                        document.querySelector('#longTermOverlay .goal-modal-title').textContent = 'Edit Long-Term Goal 🎯';
+                        openOverlay('longTermOverlay');
+                    }
                 }
             });
         });
@@ -2130,6 +2302,9 @@ if (page === 'planner') {
 
     // ── Reset forms ───────────────────────────────────────────
     function resetShortForm() {
+        editingGoalId = null;
+        document.getElementById('createShortGoalBtn').innerHTML = '<i class="fa-solid fa-plus"></i> Add Goal';
+        document.querySelector('#shortTermOverlay .goal-modal-title').textContent = 'Short-Term Goal ⚡';
         document.getElementById('shortGoalText').value         = '';
         document.getElementById('shortGoalDesc').value         = '';
         document.getElementById('shortGoalDay').value          = '';
@@ -2146,6 +2321,9 @@ if (page === 'planner') {
     }
 
     function resetLongForm() {
+        editingGoalId = null;
+        document.getElementById('createLongGoalBtn').innerHTML = '<i class="fa-solid fa-plus"></i> Create Goal';
+        document.querySelector('#longTermOverlay .goal-modal-title').textContent = 'Long-Term Goal 🎯';
         document.getElementById('longGoalTitle').value         = '';
         document.getElementById('longGoalDesc').value          = '';
         document.getElementById('longGoalTargetValue').value   = '';
@@ -2179,8 +2357,8 @@ if (page === 'planner') {
         });
     }
 
-    // ── Create short-term goal ────────────────────────────────
-    document.getElementById('createShortGoalBtn')?.addEventListener('click', () => {
+    // ── Create or Edit short-term goal ────────────────────────────────
+    document.getElementById('createShortGoalBtn')?.addEventListener('click', async () => {
         const textEl = document.getElementById('shortGoalText');
         const errEl  = document.getElementById('shortGoalError');
         const text   = textEl?.value.trim();
@@ -2200,36 +2378,46 @@ if (page === 'planner') {
             showToast('Reminder date and time must be in the future.', 'error'); return;
         }
 
-        const goalId  = Date.now();
-        const goals   = getPlannerGoals();
-        const newGoal = {
-            id: goalId, type: 'short', text, title: text,
-            description: desc || '', day: day || '',
-            priority: shortPriority, status: 'active', progress: 0,
-            hasReminder: wantRemind, reminderFreq: wantRemind ? shortFreq : null,
-            progressLog: [],
-            createdAt: new Date().toISOString(),
+        const payload = {
+            type: 'short', title: text, description: desc || '', day: day || '',
+            priority: shortPriority, hasReminder: wantRemind, 
+            reminderFreq: wantRemind ? shortFreq : null
         };
-        goals.push(newGoal);
-        savePlannerGoals(goals);
 
-        if (wantRemind) {
-            addReminderForGoal(goalId, text, shortFreq, remDate, remTime);
-            pushNotification('reminder', 'Goal reminder set 🔔', `"${text}" reminder set — ${shortFreq}, starting ${remDate} at ${remTime}.`);
+        try {
+            if (editingGoalId) {
+                const res = await apiFetch(`/api/goals/${editingGoalId}`, { method: 'PUT', body: payload });
+                const idx = plannerGoals.findIndex(g => g.id === editingGoalId);
+                if (idx !== -1) plannerGoals[idx] = { ...res.data, id: res.data._id };
+                showToast(`"${text}" updated! ✓`, 'success');
+            } else {
+                payload.status = 'active';
+                payload.progress = 0;
+                payload.progressLog = [];
+                const res = await apiFetch('/api/goals', { method: 'POST', body: payload });
+                const newGoal = { ...res.data, id: res.data._id };
+                plannerGoals.unshift(newGoal);
+                
+                if (wantRemind) {
+                    addReminderForGoal(newGoal.id, text, shortFreq, remDate, remTime);
+                    pushNotification('reminder', 'Goal reminder set 🔔', `"${text}" reminder set — ${shortFreq}, starting ${remDate} at ${remTime}.`);
+                }
+                pushNotification('goal', 'Short-term goal added ⚡', `"${text}" added${day ? ` for ${day}` : ''} with ${shortPriority} priority.`);
+                showToast(`"${text}" added! ✓`, 'success');
+            }
+            closeOverlay('shortTermOverlay');
+            renderGoals(currentTab);
+        } catch(err) {
+            showToast(err.message || 'Error saving goal', 'error');
         }
-
-        pushNotification('goal', 'Short-term goal added ⚡', `"${text}" added${day ? ` for ${day}` : ''} with ${shortPriority} priority.`);
-        showToast(`"${text}" added! ✓`, 'success');
-        closeOverlay('shortTermOverlay');
-        renderGoals(currentTab);
     });
 
     document.getElementById('shortGoalText')?.addEventListener('keydown', e => {
         if (e.key === 'Enter') document.getElementById('createShortGoalBtn')?.click();
     });
 
-    // ── Create long-term goal ─────────────────────────────────
-    document.getElementById('createLongGoalBtn')?.addEventListener('click', () => {
+    // ── Create or Edit long-term goal ─────────────────────────────────
+    document.getElementById('createLongGoalBtn')?.addEventListener('click', async () => {
         const titleEl = document.getElementById('longGoalTitle');
         const errEl   = document.getElementById('longGoalError');
         const title   = titleEl?.value.trim();
@@ -2254,42 +2442,48 @@ if (page === 'planner') {
             showToast('Reminder date and time must be in the future.', 'error'); return;
         }
 
-        const goalId  = Date.now();
-        const goals   = getPlannerGoals();
-
-        // Build initial log entry if starting progress > 0
-        const initialLog = [];
-        if (initProg > 0) {
-            initialLog.push({
-                pct:  initProg,
-                prev: 0,
-                note: `🚀 Started at ${initProg}% progress.`,
-                date: new Date().toISOString(),
-            });
-        }
-
-        const newGoal = {
-            id: goalId, type: 'long', title, text: title,
-            description: desc || '', priority: longPriority,
+        const payload = {
+            type: 'long', title, description: desc || '', priority: longPriority,
             targetValue: targetValue || '', targetAmount: targetAmount || '',
-            deadline: deadline || '', progress: initProg,
-            status: initProg >= 100 ? 'completed' : 'active',
-            hasReminder: wantRemind, reminderFreq: wantRemind ? longFreq : null,
-            progressLog: initialLog,
-            createdAt: new Date().toISOString(),
+            deadline: deadline || null,
+            hasReminder: wantRemind, reminderFreq: wantRemind ? longFreq : null
         };
-        goals.push(newGoal);
-        savePlannerGoals(goals);
 
-        if (wantRemind) {
-            addReminderForGoal(goalId, title, longFreq, remDate, remTime);
-            pushNotification('reminder', 'Goal reminder set 🔔', `"${title}" reminder set — ${longFreq}, starting ${remDate} at ${remTime}.`);
+        try {
+            if (editingGoalId) {
+                const res = await apiFetch(`/api/goals/${editingGoalId}`, { method: 'PUT', body: payload });
+                const idx = plannerGoals.findIndex(g => g.id === editingGoalId);
+                if (idx !== -1) plannerGoals[idx] = { ...res.data, id: res.data._id };
+                showToast(`"${title}" updated! ✓`, 'success');
+            } else {
+                const initialLog = [];
+                if (initProg > 0) {
+                    initialLog.push({
+                        pct:  initProg, prev: 0,
+                        note: `🚀 Started at ${initProg}% progress.`,
+                        date: new Date().toISOString(),
+                    });
+                }
+                payload.progress = initProg;
+                payload.status = initProg >= 100 ? 'completed' : 'active';
+                payload.progressLog = initialLog;
+
+                const res = await apiFetch('/api/goals', { method: 'POST', body: payload });
+                const newGoal = { ...res.data, id: res.data._id };
+                plannerGoals.unshift(newGoal);
+
+                if (wantRemind) {
+                    addReminderForGoal(newGoal.id, title, longFreq, remDate, remTime);
+                    pushNotification('reminder', 'Goal reminder set 🔔', `"${title}" reminder set — ${longFreq}, starting ${remDate} at ${remTime}.`);
+                }
+                pushNotification('goal', 'Long-term goal created 🎯', `"${title}" added.${deadline ? ` Deadline: ${deadline}.` : ''}`);
+                showToast(`"${title}" created! ✓`, 'success');
+            }
+            closeOverlay('longTermOverlay');
+            renderGoals(currentTab);
+        } catch(err) {
+            showToast(err.message || 'Error saving goal', 'error');
         }
-
-        pushNotification('goal', 'Long-term goal created 🎯', `"${title}" added.${deadline ? ` Deadline: ${deadline}.` : ''}`);
-        showToast(`"${title}" created! ✓`, 'success');
-        closeOverlay('longTermOverlay');
-        renderGoals(currentTab);
     });
 
     document.getElementById('longGoalTitle')?.addEventListener('keydown', e => {
@@ -2350,6 +2544,7 @@ if (page === 'planner') {
         const noteErr  = document.getElementById('updateNoteError');
         const curFill  = document.getElementById('updateCurrentFill');
         const curPct   = document.getElementById('updateCurrentPct');
+
         const newPctEl = document.getElementById('updateNewPct');
         const lockedNote = document.getElementById('updateLockedNote');
         const minNote    = document.getElementById('updateMinNote');
@@ -2401,7 +2596,7 @@ if (page === 'planner') {
     });
 
     // Save progress
-    document.getElementById('saveProgressBtn')?.addEventListener('click', () => {
+    document.getElementById('saveProgressBtn')?.addEventListener('click', async () => {
         if (updateTargetId === null) return;
 
         const goals  = getPlannerGoals();
@@ -2438,41 +2633,54 @@ if (page === 'planner') {
             date: new Date().toISOString(),
         };
 
-        // Update goal
-        goal.progress = newPct;
-        if (!goal.progressLog) goal.progressLog = [];
-        goal.progressLog.unshift(logEntry); // newest first
+        const updatedLog = [...(goal.progressLog || [])];
+        updatedLog.unshift(logEntry);
+        
+        try {
+            await apiFetch(`/api/goals/${updateTargetId}/progress`, {
+                method: 'PATCH',
+                body: { progress: newPct, milestones: goal.milestones, progressLog: updatedLog }
+            });
+            
+            goal.progress = newPct;
+            goal.progressLog = updatedLog;
 
-        if (newPct >= 100) {
-            goal.status   = 'completed';
-            goal.progress = 100;
-            // Update last entry to 100
-            goal.progressLog[0].pct = 100;
-            pushNotification('goal', 'Goal completed! 🎉', `"${goal.title}" reached 100% — you crushed it!`);
-            showToast(`"${goal.title}" completed! 🎉`, 'success');
-        } else {
-            const gain = newPct - prevPct;
-            pushNotification(
-                'goal', 'Goal progress updated',
-                `"${goal.title}" is now at ${newPct}%${gain > 0 ? ` (+${gain}%)` : ''} — ${note}`
-            );
-            showToast(`Progress updated to ${newPct}% ✓`, 'success');
+            if (newPct >= 100) {
+                goal.status   = 'completed';
+                goal.progress = 100;
+                goal.progressLog[0].pct = 100;
+                pushNotification('goal', 'Goal completed! 🎉', `"${goal.title}" reached 100% — you crushed it!`);
+                showToast(`"${goal.title}" completed! 🎉`, 'success');
+            } else {
+                const gain = newPct - prevPct;
+                pushNotification(
+                    'goal', 'Goal progress updated',
+                    `"${goal.title}" is now at ${newPct}%${gain > 0 ? ` (+${gain}%)` : ''} — ${note}`
+                );
+                showToast(`Progress updated to ${newPct}% ✓`, 'success');
+            }
+
+            closeOverlay('updateProgressOverlay');
+            updateTargetId = null;
+            renderGoals(currentTab);
+        } catch(err) {
+            showToast('Failed to update progress', 'error');
         }
-
-        savePlannerGoals(goals);
-        closeOverlay('updateProgressOverlay');
-        updateTargetId = null;
-        renderGoals(currentTab);
     });
 
     // ── Init ──────────────────────────────────────────────────
-    window.addEventListener('DOMContentLoaded', () => {
+    function initPlanner() {
         updateHero();
         updateStats();
-        renderGoals('all');
-        getReminders().filter(r => r.fromGoal && !r.triggered).forEach(r => scheduleGoalReminder(r));
-    });
+        fetchGoals();
+    }
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', initPlanner);
+    } else {
+        initPlanner();
+    }
 }
+
 
 // ============================================================
 // NOTEBOOK PAGE
@@ -2482,191 +2690,324 @@ if (page === 'notebook') {
         const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
         const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 
-        let notes        = JSON.parse(localStorage.getItem('appNotes') || '[]');
-        let activeId     = null;
-        let activeFilter = 'all';
-        let searchQuery  = '';
-        let nextId       = notes.length ? Math.max(...notes.map(n => n.id)) + 1 : 1;
+        let notesData = [];
+        let activeNoteId = null;
+        let activeNoteCategory = 'all';
+        let searchQuery = '';
+        let pinInFlight = false;
 
-        function saveNotes() { localStorage.setItem('appNotes', JSON.stringify(notes)); }
+        const categoryLabels = {
+            personal: 'Personal',
+            work: 'Work',
+            study: 'Study',
+            ideas: 'Ideas'
+        };
 
-        function escHtml(s) {
-            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        async function fetchNotes() {
+            const list = document.getElementById('notesList');
+            if (list) list.innerHTML = `<div style="text-align:center;padding:30px;color:#aaa;">Loading notes...</div>`;
+            try {
+                const res = await apiFetch('/api/notes');
+                if (res.data) {
+                    notesData = res.data.map(n => ({ ...n, id: n._id }));
+                    renderNotes();
+                }
+            } catch (err) {
+                console.error('Failed to fetch notes:', err);
+                showToast('Failed to load notes', 'error');
+            }
         }
 
         function formatShortDate(d) {
             d = new Date(d);
-            const now     = new Date();
-            const today   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const noteDay = new Date(d.getFullYear(),   d.getMonth(),   d.getDate());
-            const diff    = Math.round((today - noteDay) / 86400000);
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const noteDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const diff = Math.round((today - noteDay) / 86400000);
             if (diff === 0) return d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
             if (diff === 1) return 'Yesterday';
-            if (diff < 7)  return DAYS[d.getDay()];
+            if (diff < 7) return DAYS[d.getDay()];
             return `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
         }
 
         function groupLabel(d) {
             d = new Date(d);
-            const now     = new Date();
-            const today   = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const noteDay = new Date(d.getFullYear(),   d.getMonth(),   d.getDate());
-            const diff    = Math.round((today - noteDay) / 86400000);
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const noteDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+            const diff = Math.round((today - noteDay) / 86400000);
             if (diff === 0) return 'Today';
-            if (diff <= 6)  return 'This Week';
+            if (diff <= 6) return 'This Week';
             if (d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) return 'This Month';
             if (d.getFullYear() === now.getFullYear()) return MONTHS[d.getMonth()];
             return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
         }
 
-        function filteredNotes() {
-            return notes
-                .filter(n => activeFilter === 'all' || n.category === activeFilter)
-                .filter(n => !searchQuery || n.title.toLowerCase().includes(searchQuery) || n.body.toLowerCase().includes(searchQuery))
-                .sort((a, b) => new Date(b.date) - new Date(a.date));
-        }
-
-        function renderList() {
+        function renderNotes() {
             const list = document.getElementById('notesList');
             if (!list) return;
-            const fn = filteredNotes();
-            if (!fn.length) {
+
+            // Filter
+            let filtered = activeNoteCategory === 'all'
+                ? notesData
+                : notesData.filter(n => n.category === activeNoteCategory);
+
+            // Search
+            if (searchQuery) {
+                const q = searchQuery.toLowerCase();
+                filtered = filtered.filter(n => 
+                    (n.title && n.title.toLowerCase().includes(q)) || 
+                    (n.content && n.content.toLowerCase().includes(q))
+                );
+            }
+
+            // Sort: Pinned first, then date descending
+            filtered.sort((a, b) => {
+                if (a.pinned !== b.pinned) return b.pinned ? 1 : -1;
+                return new Date(b.updatedAt || b.createdAt) - new Date(a.updatedAt || a.createdAt);
+            });
+
+            if (filtered.length === 0) {
                 list.innerHTML = `<div style="text-align:center;padding:30px 16px;font-size:12px;color:#aaa;font-family:'Inter',sans-serif;">No notes found</div>`;
                 return;
             }
-            let html = '', lastGroup = null;
-            fn.forEach(n => {
-                const g = groupLabel(n.date);
-                if (g !== lastGroup) { html += `<div class="notes-date-group-label">${g}</div>`; lastGroup = g; }
-                html += `
-<div class="notes-item${n.id === activeId ? ' active' : ''}" data-id="${n.id}">
-  <div class="notes-item-title">${escHtml(n.title || 'New Note')}</div>
-  <div class="notes-item-preview">
-    <span class="notes-item-date">${formatShortDate(n.date)}</span>
-    <span class="notes-item-snippet">${escHtml(n.body.slice(0,60))}</span>
-  </div>
-  <button class="notes-item-del" data-del="${n.id}" title="Delete">×</button>
-</div>`;
+
+            list.innerHTML = '';
+            let lastGroup = null;
+
+            filtered.forEach(note => {
+                const g = groupLabel(note.updatedAt || note.createdAt);
+                if (!note.pinned && g !== lastGroup) {
+                    const label = document.createElement('div');
+                    label.className = 'notes-date-group-label';
+                    label.textContent = g;
+                    list.appendChild(label);
+                    lastGroup = g;
+                } else if (note.pinned && lastGroup !== 'Pinned') {
+                    const label = document.createElement('div');
+                    label.className = 'notes-date-group-label';
+                    label.innerHTML = '<i class="fa-solid fa-thumbtack"></i> Pinned';
+                    list.appendChild(label);
+                    lastGroup = 'Pinned';
+                }
+
+                list.appendChild(buildNoteItem(note));
             });
-            list.innerHTML = html;
-            list.querySelectorAll('.notes-item').forEach(el => {
-                el.addEventListener('click', function (e) {
-                    if (e.target.closest('[data-del]')) return;
-                    selectNote(+this.dataset.id);
-                });
+        }
+
+        function buildNoteItem(note) {
+            const item = document.createElement('div');
+            item.className = `notes-item ${note.id === activeNoteId ? 'active' : ''} ${note.pinned ? 'pinned' : ''}`;
+            item.dataset.id = note.id;
+
+            const snippet = (note.content || '').replace(/\n/g, ' ').substring(0, 150);
+            const tagsHtml = (note.tags && note.tags.length) 
+                ? `<div class="note-tags-list" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;">${note.tags.map(t => `<span class="note-tag-chip" style="font-size:10px;background:var(--surface-2);padding:2px 6px;border-radius:4px;color:var(--text-sub);">#${t}</span>`).join('')}</div>`
+                : '';
+
+            item.innerHTML = `
+                <div class="notes-item-header" style="display:flex;justify-content:space-between;align-items:flex-start;">
+                    <div class="notes-item-title" style="font-weight:600;font-size:0.9rem;color:var(--text-primary);">${note.title || 'Untitled'}</div>
+                    <button class="notes-item-del" data-id="${note.id}" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:16px;">×</button>
+                </div>
+                <div class="notes-item-preview" style="font-size:0.8rem;color:var(--text-sub);margin-top:4px;">
+                    <span class="notes-item-date" style="color:var(--accent);margin-right:6px;">${formatShortDate(note.updatedAt || note.createdAt)}</span>
+                    <span class="notes-item-snippet">${snippet}${snippet.length >= 150 ? '...' : ''}</span>
+                </div>
+                <div class="notes-item-footer" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;">
+                    <span class="note-category-badge cat-${note.category}" style="font-size:10px;text-transform:uppercase;letter-spacing:0.5px;font-weight:700;">${categoryLabels[note.category] || note.category}</span>
+                    ${tagsHtml}
+                </div>
+            `;
+
+            item.addEventListener('click', (e) => {
+                if (e.target.classList.contains('notes-item-del')) return;
+                selectNote(note.id);
             });
-            list.querySelectorAll('[data-del]').forEach(el => {
-                el.addEventListener('click', function (e) {
-                    e.stopPropagation();
-                    deleteNote(+this.dataset.del);
-                });
+
+            item.querySelector('.notes-item-del').addEventListener('click', (e) => {
+                e.stopPropagation();
+                confirmDelete(`Delete "${note.title || 'Untitled'}"?`, () => deleteNote(note.id));
             });
+
+            return item;
         }
 
         function selectNote(id) {
-            activeId = id;
-            const note = notes.find(n => n.id === id);
+            activeNoteId = id;
+            const note = notesData.find(n => n.id === id);
             if (!note) return;
-            document.getElementById('notesEmptyState').style.display    = 'none';
+
+            document.getElementById('notesEmptyState').style.display = 'none';
             document.getElementById('notesEditorContent').style.display = 'flex';
-            document.getElementById('noteTitleInput').value     = note.title;
-            document.getElementById('noteBodyInput').value      = note.body;
-            document.getElementById('noteCategorySelect').value = note.category;
-            const d = new Date(note.date);
+            
+            document.getElementById('noteTitleInput').value = note.title || '';
+            document.getElementById('noteBodyInput').value = note.content || '';
+            document.getElementById('noteCategorySelect').value = note.category || 'personal';
+            document.getElementById('noteTagsInput').value = (note.tags || []).join(', ');
+            
+            const pinBtn = document.getElementById('notesPinBtn');
+            if (pinBtn) {
+                pinBtn.classList.toggle('active', !!note.pinned);
+                pinBtn.style.color = note.pinned ? 'var(--accent)' : 'inherit';
+            }
+
+            const d = new Date(note.updatedAt || note.createdAt);
             document.getElementById('notesEditorMeta').textContent =
                 `${DAYS[d.getDay()]}, ${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} at ` +
                 d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
-            renderList();
+            
+            renderNotes();
         }
 
-        function deleteNote(id) {
-            const note  = notes.find(n => n.id === id);
-            const title = note?.title?.trim() || 'Untitled note';
-            confirmDelete(`Delete "${title}"? This cannot be undone.`, () => {
-                pushNotification('delete', 'Note deleted', `"${title}" has been permanently deleted from your notebook.`);
-                notes = notes.filter(n => n.id !== id);
-                saveNotes();
-                if (activeId === id) {
-                    activeId = null;
-                    document.getElementById('notesEmptyState').style.display   = 'flex';
-                    document.getElementById('notesEditorContent').style.display = 'none';
-                }
-                renderList();
-            });
-        }
+        async function saveActive() {
+            if (!activeNoteId) return;
 
-        function saveActive() {
-            const note = notes.find(n => n.id === activeId);
-            if (!note) return;
-            const oldTitle = note.title;
-            note.title    = document.getElementById('noteTitleInput').value;
-            note.body     = document.getElementById('noteBodyInput').value;
-            note.category = document.getElementById('noteCategorySelect').value;
-            note.date     = new Date().toISOString();
-            saveNotes();
-            if (!oldTitle && note.title) {
-                pushNotification('note', 'Note saved 📓', `"${note.title}" saved to your ${note.category} notes.`);
+            const title = document.getElementById('noteTitleInput').value.trim();
+            const content = document.getElementById('noteBodyInput').value;
+            const category = document.getElementById('noteCategorySelect').value;
+            const tagsRaw = document.getElementById('noteTagsInput').value;
+            const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(t => t) : [];
+
+            if (!title) {
+                showToast('Title is required', 'warning');
+                return;
             }
-            renderList();
+
+            try {
+                const res = await apiFetch(`/api/notes/${activeNoteId}`, {
+                    method: 'PUT',
+                    body: { title, content, category, tags }
+                });
+
+                if (res.success) {
+                    const updatedNote = { ...res.data, id: res.data._id };
+                    const idx = notesData.findIndex(n => n.id === activeNoteId);
+                    if (idx !== -1) notesData[idx] = updatedNote;
+                    
+                    showToast('Note saved ✓', 'success');
+                    renderNotes();
+                }
+            } catch (err) {
+                console.error('Failed to save note:', err);
+                showToast('Failed to save note', 'error');
+            }
         }
 
-        function newNote() {
-            const n = {
-                id: nextId++, title: '', body: '',
-                category: activeFilter === 'all' ? 'general' : activeFilter,
-                date: new Date().toISOString(),
-            };
-            notes.unshift(n);
-            saveNotes();
-            pushNotification('note', 'New note created 📝', 'A new note has been created. Start writing your thoughts!');
-            selectNote(n.id);
-            document.getElementById('noteTitleInput').focus();
+        async function newNote() {
+            try {
+                const res = await apiFetch('/api/notes', {
+                    method: 'POST',
+                    body: {
+                        title: 'Untitled Note',
+                        content: '',
+                        category: activeNoteCategory === 'all' ? 'personal' : activeNoteCategory,
+                        tags: []
+                    }
+                });
+
+                if (res.success) {
+                    const note = { ...res.data, id: res.data._id };
+                    notesData.unshift(note);
+                    renderNotes();
+                    selectNote(note.id);
+                    document.getElementById('noteTitleInput').focus();
+                    pushNotification('note', 'New note created 📝', 'Start writing your thoughts!');
+                }
+            } catch (err) {
+                console.error('Failed to create note:', err);
+                showToast('Failed to create note', 'error');
+            }
+        }
+
+        async function deleteNote(id) {
+            try {
+                const res = await apiFetch(`/api/notes/${id}`, { method: 'DELETE' });
+                if (res.success) {
+                    notesData = notesData.filter(n => n.id !== id);
+                    if (activeNoteId === id) {
+                        activeNoteId = null;
+                        document.getElementById('notesEmptyState').style.display = 'flex';
+                        document.getElementById('notesEditorContent').style.display = 'none';
+                    }
+                    renderNotes();
+                    pushNotification('delete', 'Note deleted', 'Note has been removed.');
+                }
+            } catch (err) {
+                console.error('Failed to delete note:', err);
+                showToast('Failed to delete note', 'error');
+            }
+        }
+
+        async function togglePin() {
+            if (!activeNoteId || pinInFlight) return;
+
+            pinInFlight = true;
+            try {
+                const res = await apiFetch(`/api/notes/${activeNoteId}/pin`, { method: 'PUT' });
+                if (res.success) {
+                    const updatedNote = { ...res.data, id: res.data._id };
+                    const idx = notesData.findIndex(n => n.id === activeNoteId);
+                    if (idx !== -1) notesData[idx] = updatedNote;
+                    
+                    const pinBtn = document.getElementById('notesPinBtn');
+                    if (pinBtn) {
+                        pinBtn.classList.toggle('active', !!updatedNote.pinned);
+                        pinBtn.style.color = updatedNote.pinned ? 'var(--accent)' : 'inherit';
+                    }
+                    
+                    renderNotes();
+                }
+            } catch (err) {
+                console.error('Failed to toggle pin:', err);
+                showToast('Failed to toggle pin', 'error');
+            } finally {
+                pinInFlight = false;
+            }
         }
 
         function initNotes() {
-            const newBtn         = document.getElementById('newNoteBtn');
-            const newBtnAlt      = document.getElementById('newNoteBtnAlt');
-            const saveBtn        = document.getElementById('notesSaveBtn');
-            const delBtn         = document.getElementById('notesDeleteBtn');
-            const tabs           = document.getElementById('notesCategoryTabs');
-            const search         = document.getElementById('noteSearchInput');
-            const titleInput     = document.getElementById('noteTitleInput');
-            const bodyInput      = document.getElementById('noteBodyInput');
+            const newBtn = document.getElementById('newNoteBtn');
+            const newBtnAlt = document.getElementById('newNoteBtnAlt');
+            const saveBtn = document.getElementById('notesSaveBtn');
+            const delBtn = document.getElementById('notesDeleteBtn');
+            const pinBtn = document.getElementById('notesPinBtn');
+            const tabs = document.getElementById('notesCategoryTabs');
+            const search = document.getElementById('noteSearchInput');
             const categorySelect = document.getElementById('noteCategorySelect');
+
             if (!newBtn) return;
 
             newBtn.addEventListener('click', newNote);
             if (newBtnAlt) newBtnAlt.addEventListener('click', newNote);
             saveBtn.addEventListener('click', saveActive);
-            delBtn.addEventListener('click', () => { if (activeId) deleteNote(activeId); });
+            delBtn.addEventListener('click', () => { if (activeNoteId) deleteNote(activeNoteId); });
+            if (pinBtn) pinBtn.addEventListener('click', togglePin);
+            
             if (categorySelect) categorySelect.addEventListener('change', saveActive);
 
-            tabs.querySelectorAll('.notes-cat-tab').forEach(btn => {
-                btn.addEventListener('click', function () {
-                    tabs.querySelectorAll('.notes-cat-tab').forEach(b => b.classList.remove('active'));
-                    this.classList.add('active');
-                    activeFilter = this.dataset.filter;
-                    renderList();
+            if (tabs) {
+                tabs.querySelectorAll('.notes-cat-tab').forEach(btn => {
+                    btn.addEventListener('click', function () {
+                        tabs.querySelectorAll('.notes-cat-tab').forEach(b => b.classList.remove('active'));
+                        this.classList.add('active');
+                        activeNoteCategory = this.dataset.filter;
+                        renderNotes();
+                    });
                 });
-            });
+            }
 
-            search.addEventListener('input', function () {
-                searchQuery = this.value.toLowerCase();
-                renderList();
-            });
+            if (search) {
+                search.addEventListener('input', (e) => {
+                    searchQuery = e.target.value;
+                    renderNotes();
+                });
+            }
 
-            let autoSave;
-            titleInput.addEventListener('input', () => { clearTimeout(autoSave); autoSave = setTimeout(saveActive, 800); });
-            bodyInput.addEventListener('input',  () => { clearTimeout(autoSave); autoSave = setTimeout(saveActive, 800); });
-
-            renderList();
+            fetchNotes();
         }
 
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initNotes);
-        } else {
-            initNotes();
-        }
+        initNotes();
     })();
 }
 
@@ -2770,114 +3111,231 @@ if (page === 'account') {
     }
 }
 
+
+
 // ============================================================
-// NOTIFICATIONS PAGE
+// ALERTS / NOTIFICATIONS PAGE
 // ============================================================
-if (page === 'notifications') {
-    let activeFilter = 'all';
+if (page === 'notifications' || page === 'alerts') {
+    let activeNotifFilter = 'all';
+
+    async function fetchNotifications() {
+        try {
+            const res = await apiFetch('/api/notification');
+            notificationsData = (res.data || []).map(n => ({ ...n, id: n._id }));
+            renderNotifications();
+        } catch (err) {
+            console.error('Failed to load notifications:', err);
+            showToast('Failed to load notifications', 'error');
+        }
+    }
 
     function renderNotifications() {
         const notifList = document.getElementById('notifList');
         if (!notifList) return;
 
-        const allNotifs = getNotifications();
-        const filtered  = activeFilter === 'all' ? allNotifs : allNotifs.filter(n => n.type === activeFilter);
-
-        const countLabel = document.getElementById('notifCountLabel');
-        if (countLabel) countLabel.textContent = `${filtered.length} notification${filtered.length === 1 ? '' : 's'}`;
-
-        const unread       = allNotifs.filter(n => !n.read).length;
-        const unreadBanner = document.getElementById('notifUnreadBanner');
-        const unreadText   = document.getElementById('notifUnreadText');
-        if (unreadBanner) {
-            unreadBanner.style.display = unread > 0 ? 'flex' : 'none';
-            if (unreadText) unreadText.textContent = unread === 1 ? '1 unread notification' : `${unread} unread notifications`;
+        // Filter logic
+        let filtered = notificationsData;
+        if (activeNotifFilter === 'unread') {
+            filtered = notificationsData.filter(n => !n.read);
+        } else if (activeNotifFilter === 'read') {
+            filtered = notificationsData.filter(n => n.read);
+        } else if (activeNotifFilter !== 'all') {
+            // Support for type filtering if present
+            filtered = notificationsData.filter(n => n.type === activeNotifFilter);
         }
 
+        // Sort: Unread first, then date descending
+        filtered.sort((a, b) => {
+            if (a.read !== b.read) return a.read ? 1 : -1;
+            return new Date(b.createdAt || b.date) - new Date(a.createdAt || a.date);
+        });
+
+        // Update counts
+        const countLabel = document.getElementById('notifCountLabel');
+        if (countLabel) {
+            const noun = page === 'alerts' ? 'alert' : 'notification';
+            countLabel.textContent = `${filtered.length} ${noun}${filtered.length === 1 ? '' : 's'}`;
+        }
+
+        const currentUnread = notificationsData.filter(n => !n.read).length;
+        const unreadBanner = document.getElementById('notifUnreadBanner');
+        const unreadText = document.getElementById('notifUnreadText');
+        if (unreadBanner) {
+            unreadBanner.style.display = currentUnread > 0 ? 'flex' : 'none';
+            if (unreadText) {
+                const noun = page === 'alerts' ? 'alert' : 'notification';
+                unreadText.textContent = currentUnread === 1 ? `1 unread ${noun}` : `${currentUnread} unread ${noun}s`;
+            }
+        }
+
+        // Disable/hide "Mark all read" if no unread
+        const markAllBtn = document.getElementById('markAllReadBtn');
+        if (markAllBtn) markAllBtn.disabled = currentUnread === 0;
+
+        // Disable "Clear all" if no notifications at all
+        const clearAllBtn = document.getElementById('clearAllNotifs');
+        if (clearAllBtn) clearAllBtn.disabled = notificationsData.length === 0;
+
         if (filtered.length === 0) {
-            notifList.innerHTML = '';
-            notifList.style.border = 'none';
-            notifList.style.background = 'transparent';
+            let emptyMsg = 'All caught up!';
+            let emptySub = 'No notifications yet. Start adding tasks, habits, and goals!';
+            
+            if (activeNotifFilter === 'unread') {
+                emptyMsg = 'No unread alerts';
+                emptySub = 'You have read all your notifications.';
+            } else if (activeNotifFilter === 'read') {
+                emptyMsg = 'No read alerts';
+                emptySub = 'You haven\'t read any notifications yet.';
+            } else if (activeNotifFilter !== 'all') {
+                emptyMsg = `No ${activeNotifFilter} alerts`;
+                emptySub = `You don't have any notifications of type "${activeNotifFilter}".`;
+            }
+
             notifList.innerHTML = `
-<div class="notif-empty">
-  <div class="notif-empty-icon">🔔</div>
-  <div class="notif-empty-title">All caught up!</div>
-  <div class="notif-empty-sub">
-    ${activeFilter === 'all'
-        ? 'No notifications yet. Start adding tasks, habits, and goals!'
-        : `No ${activeFilter} notifications yet.`}
-  </div>
-</div>`;
+                <div class="notif-empty">
+                    <div class="notif-empty-icon">🔔</div>
+                    <div class="notif-empty-title">${emptyMsg}</div>
+                    <div class="notif-empty-sub">${emptySub}</div>
+                </div>`;
             return;
         }
 
-        notifList.style.border     = '';
-        notifList.style.background = '';
-
         let html = '', lastGroup = null;
         filtered.forEach(n => {
-            const group = notifGroupLabel(n.date);
-            if (group !== lastGroup) { html += `<div class="notif-group-label">${group}</div>`; lastGroup = group; }
+            const date = n.createdAt || n.date;
+            const group = notifGroupLabel(date);
+            if (group !== lastGroup) {
+                html += `<div class="notif-group-label">${group}</div>`;
+                lastGroup = group;
+            }
             const typeConfig = NOTIF_TYPES[n.type] || NOTIF_TYPES.system;
             html += `
-<div class="notif-item${n.read ? '' : ' unread'}" data-id="${n.id}">
-  <div class="notif-icon-bubble ${n.type}">${typeConfig.icon}</div>
-  <div class="notif-content">
-    <div class="notif-title">${n.title}</div>
-    <div class="notif-body">${n.body}</div>
-    <div class="notif-time">${formatNotifTime(n.date)}</div>
-  </div>
-  <div class="notif-right">
-    <span class="notif-type-badge ${n.type}">${typeConfig.label}</span>
-    <button class="notif-dismiss-btn" data-dismiss="${n.id}" title="Dismiss">✕</button>
-  </div>
-</div>`;
+                <div class="notif-item${n.read ? '' : ' unread'}" 
+                     data-id="${n.id}" 
+                     data-reference-id="${n.reference?.documentId || ''}" 
+                     data-reference-type="${n.reference?.model || ''}"
+                     style="cursor: ${n.reference?.documentId ? 'pointer' : 'default'}">
+                    <div class="notif-icon-bubble ${n.type}">${typeConfig.icon}</div>
+                    <div class="notif-content">
+                        <div class="notif-title">${n.title}</div>
+                        <div class="notif-body">${n.message || n.body}</div>
+                        <div class="notif-time">${getRelativeTime(date)}</div>
+                    </div>
+                    <div class="notif-right">
+                        <span class="notif-type-badge ${n.type}">${typeConfig.label}</span>
+                        ${!n.read ? `<button class="notif-read-btn" data-read="${n.id}" title="Mark as read"><i class="fa-solid fa-check"></i></button>` : ''}
+                        <button class="notif-dismiss-btn" data-dismiss="${n.id}" title="Delete">✕</button>
+                    </div>
+                </div>`;
         });
 
         notifList.innerHTML = html;
 
-        const updated = getNotifications().map(n => ({ ...n, read: true }));
-        saveNotifications(updated);
-        updateNotifBadge();
-
-        notifList.querySelectorAll('[data-dismiss]').forEach(btn => {
-            btn.addEventListener('click', function (e) {
-                e.stopPropagation();
-                const id      = +this.dataset.dismiss;
-                const updated = getNotifications().filter(n => n.id !== id);
-                saveNotifications(updated);
-                renderNotifications();
+        // Event Listeners
+        notifList.querySelectorAll('.notif-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const refId = item.dataset.referenceId;
+                const refType = item.dataset.referenceType;
+                if (refId && refType) {
+                    if (refType === 'Goal') window.location.href = 'planner.html';
+                    else if (refType === 'Habit') window.location.href = 'habits.html';
+                    else if (refType === 'Task') window.location.href = 'tasks.html';
+                    else if (refType === 'Note') window.location.href = 'notebook.html';
+                }
             });
         });
+        notifList.querySelectorAll('[data-read]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.read;
+                await markAsRead(id);
+            });
+        });
+
+        notifList.querySelectorAll('[data-dismiss]').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const id = btn.dataset.dismiss;
+                await deleteNotification(id);
+            });
+        });
+    }
+
+    async function markAsRead(id) {
+        try {
+            await apiFetch(`/api/notification/${id}/read`, { method: 'PATCH' });
+            const notif = notificationsData.find(n => n.id === id);
+            if (notif) notif.read = true;
+            updateNotifBadge();
+            renderNotifications();
+        } catch (err) {
+            showToast('Failed to mark as read', 'error');
+        }
+    }
+
+    async function markAllAsRead() {
+        const unreadOnly = notificationsData.filter(n => !n.read);
+        if (unreadOnly.length === 0) return;
+        try {
+            await apiFetch('/api/notification/read-all', { method: 'PATCH' });
+            notificationsData.forEach(n => n.read = true);
+            updateNotifBadge();
+            renderNotifications();
+        } catch (err) {
+            showToast('Failed to mark all as read', 'error');
+        }
+    }
+
+    async function deleteNotification(id) {
+        try {
+            await apiFetch(`/api/notification/${id}`, { method: 'DELETE' });
+            const idx = notificationsData.findIndex(n => n.id === id);
+            if (idx !== -1) {
+                notificationsData.splice(idx, 1);
+                updateNotifBadge();
+                renderNotifications();
+            }
+        } catch (err) {
+            showToast('Failed to delete notification', 'error');
+        }
+    }
+
+    async function clearAllNotifications() {
+        const count = notificationsData.length;
+        if (count === 0) return;
+        
+        confirmDelete(
+            `Clear all ${count} notification${count === 1 ? '' : 's'}? This cannot be undone.`,
+            async () => {
+                try {
+                    await apiFetch('/api/notification', { method: 'DELETE' });
+                    notificationsData = [];
+                    updateNotifBadge();
+                    renderNotifications();
+                } catch (err) {
+                    showToast('Failed to clear notifications', 'error');
+                }
+            },
+            { icon: '🔔', title: 'Clear Notifications?', confirmLabel: 'Clear All', btnColor: '#ef4444' }
+        );
     }
 
     document.querySelectorAll('.notif-filter-btn').forEach(btn => {
         btn.addEventListener('click', function () {
             document.querySelectorAll('.notif-filter-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-            activeFilter = this.dataset.filter;
+            activeNotifFilter = this.dataset.filter;
             renderNotifications();
         });
     });
 
-    document.getElementById('markAllReadBtn')?.addEventListener('click', () => {
-        markAllNotifsRead();
-        renderNotifications();
-    });
+    document.getElementById('markAllReadBtn')?.addEventListener('click', markAllAsRead);
+    document.getElementById('clearAllNotifs')?.addEventListener('click', clearAllNotifications);
 
-    document.getElementById('clearAllNotifs')?.addEventListener('click', () => {
-        const count = getNotifications().length;
-        if (count === 0) return;
-        confirmDelete(
-            `Clear all ${count} notification${count === 1 ? '' : 's'}? This cannot be undone.`,
-            () => { saveNotifications([]); updateNotifBadge(); renderNotifications(); },
-            { icon: '🔔', title: 'Clear Notifications?', confirmLabel: 'Clear All', btnColor: '#ef4444' }
-        );
-    });
-
-    if (getNotifications().length === 0) {
-        pushNotification('system', 'Welcome to Goal Vault! 👋', 'Your notifications will appear here — tasks, habits, reminders, streaks and more.');
+    if (document.readyState === 'loading') {
+        window.addEventListener('DOMContentLoaded', fetchNotifications);
+    } else {
+        fetchNotifications();
     }
-
-    window.addEventListener('DOMContentLoaded', renderNotifications);
 }

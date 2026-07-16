@@ -1,13 +1,39 @@
 const nodemailer = require('nodemailer')
 
 // Create transporter
-const transporter = nodemailer.createTransport({
+let transporter = null
+
+function getTransporter() {
+  if (transporter) return transporter
+
+  if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
+    console.warn('Email credentials not set — email sending disabled')
+    return null
+  }
+ transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS  // Gmail App Password — not your regular password
   }
 })
+  return transporter
+}
+
+// ── Send helper ───────────────────────────────────────────────────
+async function sendMail(options) {
+  const t = getTransporter()
+  if (!t) {
+    console.log('Email skipped — no credentials:', options.subject)
+    return
+  }
+  try {
+    await t.sendMail(options)
+    console.log('Email sent to:', options.to)
+  } catch (err) {
+    console.error('Failed to send email:', err.message)
+  }
+}
 
 // ─── EMAIL TEMPLATES ──────────────────────────────────────────────
 

@@ -1,4 +1,4 @@
-import { getUser } from '../utils/helpers.js'
+import { getUser } from './utils/helpers.js'
 
 const NAV_ITEMS = [
   { icon: 'dashboard',           label: 'Dashboard',     href: '/pages/dashboard.html' },
@@ -60,8 +60,8 @@ export function renderSidebar(activePage = '') {
 
   // At the end of renderSidebar function, after the innerHTML is set
   document.querySelector('.avatar')?.addEventListener('click', () => {
-  window.location.href = '/pages/settings.html'
-})
+    window.location.href = '/pages/settings.html'
+  })
   document.querySelector('.avatar')?.style.setProperty('cursor', 'pointer')
 }
 

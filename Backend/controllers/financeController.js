@@ -2,6 +2,7 @@ const Transaction = require('../models/Transaction')
 const Budget = require('../models/Budget')
 const Wallet = require('../models/Wallet')
 const mongoose = require('mongoose')
+const { success, error } = require('../Utils/responseHandler')
 
 // ─── WALLET CONTROLLERS ────────────────────────────────────────────
 
@@ -22,29 +23,29 @@ exports.createWallet = async (req, res) => {
       isDefault: isDefault || false
     })
 
-    res.status(201).json({ status: true, message: 'Wallet created', data: wallet })
+    success(res, wallet, 'Wallet created', 201)
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
 exports.getWallets = async (req, res) => {
   try {
     const wallets = await Wallet.find({ user: req.user.id }).sort({ isDefault: -1 })
-    res.json({ status: true, data: wallets })
+    success(res, wallets)
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
 exports.getWalletById = async (req, res) => {
   try {
     const wallet = await Wallet.findOne({ _id: req.params.id, user: req.user.id })
-    if (!wallet) return res.status(404).json({ status: false, message: 'Wallet not found' })
+    if (!wallet) return error(res, 'Wallet not found', 404)
 
-    res.json({ status: true, data: wallet })
+    success(res, wallet)
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
@@ -61,22 +62,22 @@ exports.updateWallet = async (req, res) => {
       req.body,
       { new: true, runValidators: true }
     )
-    if (!wallet) return res.status(404).json({ status: false, message: 'Wallet not found' })
+    if (!wallet) return error(res, 'Wallet not found', 404)
 
-    res.json({ status: true, message: 'Wallet updated', data: wallet })
+    success(res, wallet, 'Wallet updated')
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
 exports.deleteWallet = async (req, res) => {
   try {
     const wallet = await Wallet.findOneAndDelete({ _id: req.params.id, user: req.user.id })
-    if (!wallet) return res.status(404).json({ status: false, message: 'Wallet not found' })
+    if (!wallet) return error(res, 'Wallet not found', 404)
 
-    res.json({ status: true, message: 'Wallet deleted' })
+    success(res, null, 'Wallet deleted')
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
@@ -84,19 +85,20 @@ exports.deleteWallet = async (req, res) => {
 
 exports.addTransaction = async (req, res) => {
   try {
-    const { category, amount, type, walletId, description, date, linkedGoal } = req.body
+    const { category, amount, type, walletId, description, date, linkedGoal, linkedPlan } = req.body
 
-    if (!walletId) return res.status(400).json({ status: false, message: 'walletId is required' })
+    if (!walletId) return error(res, 'walletId is required', 400)
+    if (!amount || amount <= 0) return error(res, 'amount must be > 0', 400)
 
     const wallet = await Wallet.findOne({ _id: walletId, user: req.user.id })
-    if (!wallet) return res.status(404).json({ status: false, message: 'Wallet not found' })
+    if (!wallet) return error(res, 'Wallet not found', 404)
 
     const balanceBefore = wallet.balance
 
     if (type === 'expense' || type === 'withdraw') {
 
       if (wallet.balance < amount) {
-        return res.status(400).json({ status: false, message: 'Insufficient wallet balance' })
+        return error(res, 'Insufficient wallet balance', 400)
       }
 
       if (type === 'expense') {
@@ -122,7 +124,7 @@ exports.addTransaction = async (req, res) => {
 
           const totalSpent = spent[0]?.total || 0
           if (totalSpent + amount > budget.limit) {
-            return res.status(400).json({ status: false, message: `Budget limit exceeded for ${category}` })
+            return error(res, `Budget limit exceeded for ${category}`, 400)
           }
         }
       }
@@ -134,14 +136,14 @@ exports.addTransaction = async (req, res) => {
 
     } else if (type === 'transfer') {
       const { toWalletId } = req.body
-      if (!toWalletId) return res.status(400).json({ status: false, message: 'toWalletId is required for transfers' })
+      if (!toWalletId) return error(res, 'toWalletId is required for transfers', 400)
 
       if (wallet.balance < amount) {
-        return res.status(400).json({ status: false, message: 'Insufficient wallet balance' })
+        return error(res, 'Insufficient wallet balance', 400)
       }
 
       const toWallet = await Wallet.findOne({ _id: toWalletId, user: req.user.id })
-      if (!toWallet) return res.status(404).json({ status: false, message: 'Destination wallet not found' })
+      if (!toWallet) return error(res, 'Destination wallet not found', 404)
 
       wallet.balance -= amount
       toWallet.balance += amount
@@ -158,6 +160,7 @@ exports.addTransaction = async (req, res) => {
       category,
       description,
       linkedGoal: linkedGoal || null,
+      linkedPlan: linkedPlan || null,
       balanceBefore,
       balanceAfter: wallet.balance,
       date: date || Date.now()
@@ -183,9 +186,26 @@ exports.addTransaction = async (req, res) => {
       }
     }
 
-    res.status(201).json({ status: true, message: 'Transaction added', data: transaction })
+    // Update plan (Budget) savedAmount/progress if linkedPlan provided
+    if (linkedPlan) {
+      const plan = await Budget.findOne({ _id: linkedPlan, user: req.user.id })
+      if (plan) {
+        if (type === 'deposit') {
+          plan.savedAmount = (plan.savedAmount || 0) + amount
+        } else if (type === 'expense' || type === 'withdraw') {
+          plan.savedAmount = Math.max(0, (plan.savedAmount || 0) - amount)
+        }
+        if (plan.targetAmount && plan.targetAmount > 0) {
+          plan.progress = Math.min(100, Math.round((plan.savedAmount / plan.targetAmount) * 100))
+          if (plan.progress === 100) plan.status = 'completed'
+        }
+        await plan.save()
+      }
+    }
+
+    success(res, transaction, 'Transaction added', 201)
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
@@ -199,42 +219,59 @@ exports.getTransactions = async (req, res) => {
 
     const transactions = await Transaction.find(filter)
       .populate('wallet', 'name type currency')
-      .populate('linkedGoal', 'title')        // ✅ populate goal name if linked
+      .populate('linkedGoal', 'title')        // populate goal name if linked
+      .populate('linkedPlan', 'category targetAmount savedAmount progress')
       .sort({ date: -1 })
 
-    res.json({ status: true, data: transactions })
+    success(res, transactions)
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
 exports.deleteTransaction = async (req, res) => {
   try {
     const transaction = await Transaction.findOne({ _id: req.params.id, user: req.user.id })
-    if (!transaction) return res.status(404).json({ status: false, message: 'Transaction not found' })
+    if (!transaction) return error(res, 'Transaction not found', 404)
 
     const wallet = await Wallet.findById(transaction.wallet)
     if (wallet) {
       if (transaction.type === 'expense' || transaction.type === 'withdraw') {
-        wallet.balance += transaction.amount  // ✅ reverse deduction
+        wallet.balance += transaction.amount  // reverse deduction
       } else if (transaction.type === 'deposit') {
-        wallet.balance -= transaction.amount  // ✅ reverse addition
+        wallet.balance -= transaction.amount  // reverse addition
       }
       // transfer reversal skipped — complex, handle manually
       await wallet.save()
     }
 
+    // If transaction was linked to a plan, reverse savedAmount
+    if (transaction.linkedPlan) {
+      const plan = await Budget.findById(transaction.linkedPlan)
+      if (plan) {
+        if (transaction.type === 'deposit') {
+          plan.savedAmount = Math.max(0, (plan.savedAmount || 0) - transaction.amount)
+        } else if (transaction.type === 'expense' || transaction.type === 'withdraw') {
+          plan.savedAmount = (plan.savedAmount || 0) + transaction.amount
+        }
+        if (plan.targetAmount && plan.targetAmount > 0) {
+          plan.progress = Math.min(100, Math.round((plan.savedAmount / plan.targetAmount) * 100))
+        }
+        await plan.save()
+      }
+    }
+
     await transaction.deleteOne()
-    res.json({ status: true, message: 'Transaction deleted and wallet balance reversed' })
+    success(res, null, 'Transaction deleted and wallet balance reversed')
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
 exports.getSummary = async (req, res) => {
   try {
     const summary = await Transaction.aggregate([
-      { $match: { user: new mongoose.Types.ObjectId(req.user.id) } },  // ✅
+      { $match: { user: new mongoose.Types.ObjectId(req.user.id) } },
       {
         $group: {
           _id: '$type',
@@ -243,16 +280,15 @@ exports.getSummary = async (req, res) => {
       }
     ])
 
-    //  covers all four types
     const result = { deposit: 0, withdraw: 0, expense: 0, transfer: 0 }
     summary.forEach(s => { result[s._id] = s.total })
     result.netBalance = result.deposit - result.withdraw - result.expense
 
     const wallets = await Wallet.find({ user: req.user.id }, 'name type balance currency')
 
-    res.json({ status: true, data: { ...result, wallets } })
+    success(res, { ...result, wallets })
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
@@ -260,24 +296,37 @@ exports.getSummary = async (req, res) => {
 
 exports.createBudget = async (req, res) => {
   try {
-    const { category, limit, month, goal } = req.body  // ✅ added goal
+    const { category, limit, month, goal, type, targetAmount, deadline, reason } = req.body
 
-    const existing = await Budget.findOne({ user: req.user.id, category, month })
-    if (existing) return res.status(400).json({ status: false, message: 'Budget already exists for this category and month' })
+    // For monthly budgets require month+limit; for plans require targetAmount
+    if (type === 'budget') {
+      const existing = await Budget.findOne({ user: req.user.id, category, month })
+      if (existing) return error(res, 'Budget already exists for this category and month', 400)
+      const budget = await Budget.create({ user: req.user.id, category, limit, month, goal, type: 'budget' })
+      return success(res, budget, 'Budget created', 201)
+    }
 
-    const budget = await Budget.create({ user: req.user.id, category, limit, month, goal })
-    res.status(201).json({ status: true, message: 'Budget created', data: budget })
+    // plan
+    if (type === 'plan') {
+      if (!targetAmount || targetAmount <= 0) return error(res, 'targetAmount is required for plans', 400)
+      const plan = await Budget.create({ user: req.user.id, category, type: 'plan', targetAmount, savedAmount: 0, deadline, reason })
+      return success(res, plan, 'Plan created', 201)
+    }
+
+    return error(res, 'Invalid budget type', 400)
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
 exports.getBudgets = async (req, res) => {
   try {
-    const budgets = await Budget.find({ user: req.user.id }).sort({ month: -1 })
-    res.json({ status: true, data: budgets })
+    const filter = { user: req.user.id }
+    if (req.query.type) filter.type = req.query.type
+    const budgets = await Budget.find(filter).sort({ month: -1 })
+    success(res, budgets)
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
@@ -288,22 +337,22 @@ exports.updateBudget = async (req, res) => {
       req.body,
       { new: true, runValidators: true }
     )
-    if (!budget) return res.status(404).json({ status: false, message: 'Budget not found' })
+    if (!budget) return error(res, 'Budget not found', 404)
 
-    res.json({ status: true, message: 'Budget updated', data: budget })
+    success(res, budget, 'Budget updated')
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 
 exports.deleteBudget = async (req, res) => {
   try {
     const budget = await Budget.findOneAndDelete({ _id: req.params.id, user: req.user.id })
-    if (!budget) return res.status(404).json({ status: false, message: 'Budget not found' })
+    if (!budget) return error(res, 'Budget not found', 404)
 
-    res.json({ status: true, message: 'Budget deleted' })
+    success(res, null, 'Budget deleted')
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message })
+    error(res, err.message, 500)
   }
 }
 

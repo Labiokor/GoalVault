@@ -20,6 +20,36 @@ const BudgetSchema = new mongoose.Schema({
     type: String, // format: "2025-01"
     required: true
   }
+  ,
+  // New fields to support "finance plans" (savings goals)
+  type: {
+    type: String,
+    enum: ['budget', 'plan'],
+    default: 'budget'
+  },
+  targetAmount: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  savedAmount: {
+    type: Number,
+    min: 0,
+    default: 0
+  },
+  deadline: {
+    type: Date
+  },
+  reason: {
+    type: String,
+    trim: true
+  },
+  progress: {
+    type: Number,
+    min: 0,
+    max: 100,
+    default: 0
+  }
 }, { timestamps: true })
 
 // Prevent duplicate budget for same user+category+month

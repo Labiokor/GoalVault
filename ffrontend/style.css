@@ -2269,6 +2269,7 @@ li.done .task-check svg { opacity: 1; }
   font-family: 'Inter', sans-serif;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

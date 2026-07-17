@@ -29,6 +29,10 @@ const TransactionSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Goal'
   },
+  linkedPlan: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Budget'
+  },
   wallet: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Wallet'  // ✅ links transaction to a wallet

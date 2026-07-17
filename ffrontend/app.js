@@ -3116,6 +3116,208 @@ if (page === 'account') {
 // ============================================================
 // ALERTS / NOTIFICATIONS PAGE
 // ============================================================
+// Wallet / Finance — account page wiring
+if (page === 'account') {
+    // Module-level state for wallet UI
+    let _wallets = [];
+    let _currentWallet = null;
+    let _walletTxs = [];
+    let _walletPlans = [];
+
+    async function fetchWallets() {
+        try {
+            const res = await apiFetch('/api/finance/wallets');
+            return (res.data || []);
+        } catch (err) { console.error('Failed to fetch wallets', err); return []; }
+    }
+
+    async function fetchTransactions(walletId, limit = 20) {
+        try {
+            const res = await apiFetch(`/api/finance/transactions?walletId=${walletId}`);
+            const txs = res.data || [];
+            return txs.slice(0, limit);
+        } catch (err) { console.error('Failed to fetch txs', err); return []; }
+    }
+
+    async function fetchPlans() {
+        try {
+            const res = await apiFetch('/api/finance/budgets?type=plan');
+            return res.data || [];
+        } catch (err) { console.error('Failed to fetch plans', err); return []; }
+    }
+
+    function renderBalance(amount) {
+        const el = document.getElementById('balanceAmount');
+        if (!el) return;
+        el.textContent = `$${(parseFloat(amount) || 0).toFixed(2)}`;
+    }
+
+    function renderPlans(plans) {
+        const el = document.getElementById('walletPlanList');
+        if (!el) return;
+        if (!plans || plans.length === 0) {
+            el.innerHTML = `
+                <div style="text-align:center;padding:24px;color:var(--text-muted);font-size:0.84rem;font-family:'Inter',sans-serif;background:var(--surface-2);border-radius:var(--radius);border:1.5px dashed var(--border);">
+                    <div style="font-size:1.8rem;margin-bottom:8px;">🎯</div>
+                    No plans yet
+                </div>`;
+            return;
+        }
+
+        el.innerHTML = plans.map(p => `
+            <div class="wallet-plan-item" data-id="${p._id}" style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:8px;border:1px solid var(--border);margin-bottom:8px;"> 
+                <div>
+                    <div style="font-weight:700">${p.category || 'Plan'}</div>
+                    <div style="font-size:0.85rem;color:var(--text-muted)">${p.reason || ''}</div>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-weight:800;color:var(--accent-2)">$${(p.savedAmount||0).toFixed(2)} / $${(p.targetAmount||0).toFixed(2)}</div>
+                    <div style="font-size:0.78rem;color:var(--text-muted)">${p.progress||0}%</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function renderTxs(txs) {
+        const el = document.getElementById('walletTxList');
+        if (!el) return;
+        if (!txs || txs.length === 0) {
+            el.innerHTML = `
+                <div style="text-align:center;padding:24px;color:var(--text-muted);font-size:0.84rem;font-family:'Inter',sans-serif;background:var(--surface-2);border-radius:var(--radius);border:1.5px dashed var(--border);">
+                    <div style="font-size:1.8rem;margin-bottom:8px;">🧾</div>
+                    No transactions yet
+                </div>`;
+            return;
+        }
+
+        el.innerHTML = txs.map(t => `
+            <div class="wallet-tx-item" style="display:flex;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border);">
+                <div>
+                    <div style="font-weight:700">${t.category} <span style="font-size:0.85rem;color:var(--text-muted)">${t.description || ''}</span></div>
+                    <div style="font-size:0.8rem;color:var(--text-muted)">${new Date(t.date).toLocaleDateString()}</div>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-weight:800;color:${t.type === 'deposit' ? 'var(--accent-2)' : '#ef4444'}">${t.type === 'deposit' ? '+' : '-'}$${(t.amount||0).toFixed(2)}</div>
+                    <div style="font-size:0.78rem;color:var(--text-muted)">Bal: $${(t.balanceAfter||0).toFixed(2)}</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    function openWalletModal(id, opts = {}) {
+        const modal = document.getElementById(id);
+        if (!modal) return;
+        modal.hidden = false;
+        document.body.style.overflow = 'hidden';
+        modal.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => closeWalletModal(id)));
+        function onKey(e) { if (e.key === 'Escape') closeWalletModal(id); }
+        modal._keyHandler = onKey;
+        document.addEventListener('keydown', onKey);
+        // set modal-specific values
+        if (id === 'walletTxModal') {
+            document.getElementById('walletTxType').value = opts.type || 'deposit';
+            document.getElementById('walletTxModalTitle').textContent = opts.type === 'withdraw' ? 'Withdraw' : (opts.type === 'transfer' ? 'Transfer' : 'Add Funds');
+            document.getElementById('walletTxSubmit').textContent = opts.type === 'withdraw' ? 'Withdraw' : (opts.type === 'transfer' ? 'Transfer' : 'Add deposit');
+        }
+    }
+
+    function closeWalletModal(id) {
+        const modal = document.getElementById(id);
+        if (!modal) return;
+        modal.hidden = true;
+        document.body.style.overflow = '';
+        if (modal._keyHandler) document.removeEventListener('keydown', modal._keyHandler);
+    }
+
+    async function loadAndRenderWallet() {
+        _wallets = await fetchWallets();
+        if (!_wallets || _wallets.length === 0) {
+            renderBalance(0);
+            renderPlans([]);
+            renderTxs([]);
+            return;
+        }
+        _currentWallet = _wallets.find(w => w.isDefault) || _wallets[0];
+        renderBalance(_currentWallet.balance);
+        _walletPlans = await fetchPlans();
+        renderPlans(_walletPlans);
+        _walletTxs = await fetchTransactions(_currentWallet._id, 20);
+        renderTxs(_walletTxs);
+    }
+
+    // Wire UI buttons and forms
+    window.addEventListener('load', () => {
+        const addBtn = document.getElementById('openAddFunds');
+        const withBtn = document.getElementById('openWithdraw');
+        const planBtn = document.getElementById('openNewPlan');
+        const viewAll = document.getElementById('viewAllTx');
+
+        if (addBtn) addBtn.addEventListener('click', () => openWalletModal('walletTxModal', { type: 'deposit' }));
+        if (withBtn) withBtn.addEventListener('click', () => openWalletModal('walletTxModal', { type: 'withdraw' }));
+        if (planBtn) planBtn.addEventListener('click', () => openWalletModal('walletPlanModal'));
+        if (viewAll) viewAll.addEventListener('click', () => openWalletModal('walletAllTxModal'));
+
+        const txForm = document.getElementById('walletTxForm');
+        if (txForm) txForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const type = document.getElementById('walletTxType').value;
+            const amount = parseFloat(document.getElementById('walletTxAmount').value);
+            const reason = document.getElementById('walletTxReason').value.trim();
+            const category = document.getElementById('walletTxCategory').value;
+            const date = document.getElementById('walletTxDate').value;
+            const planSel = document.getElementById('walletTxPlan');
+            const linkedPlan = planSel ? (planSel.value || null) : null;
+
+            if (!amount || amount <= 0) { showToast('Enter a valid amount', 'error'); return; }
+            if (!_currentWallet) { showToast('No wallet selected', 'error'); return; }
+
+            try {
+                await apiFetch('/api/finance/transactions', { method: 'POST', body: { category, amount, type, walletId: _currentWallet._id, description: reason, date, linkedPlan } });
+                showToast('Transaction added', 'success');
+                closeWalletModal('walletTxModal');
+                await loadAndRenderWallet();
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Failed to add transaction', 'error');
+            }
+        });
+
+        const planForm = document.getElementById('walletPlanForm');
+        if (planForm) planForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('walletPlanName').value.trim();
+            const targetAmount = parseFloat(document.getElementById('walletPlanTarget').value);
+            const deadline = document.getElementById('walletPlanDeadline').value;
+            const reason = document.getElementById('walletPlanReason').value.trim();
+            const category = document.getElementById('walletPlanCategory').value;
+
+            if (!name && !category) { showToast('Provide a plan name or category', 'error'); return; }
+            if (!targetAmount || targetAmount <= 0) { showToast('Enter a valid target amount', 'error'); return; }
+
+            try {
+                await apiFetch('/api/finance/budgets', { method: 'POST', body: { type: 'plan', category, targetAmount, deadline, reason } });
+                showToast('Plan created', 'success');
+                closeWalletModal('walletPlanModal');
+                await loadAndRenderWallet();
+            } catch (err) {
+                console.error(err);
+                showToast(err.message || 'Failed to create plan', 'error');
+            }
+        });
+
+        // Ensure when wallet subpage opens we load data
+        const originalOpen = window.openSettingsPage;
+        window.openSettingsPage = function (pageId) {
+            originalOpen(pageId);
+            if (pageId === 'walletPageInner') {
+                // small delay to ensure DOM visible
+                setTimeout(() => loadAndRenderWallet(), 60);
+            }
+        };
+
+    });
+}
+
 if (page === 'notifications' || page === 'alerts') {
     let activeNotifFilter = 'all';
 
@@ -3339,3 +3541,4 @@ if (page === 'notifications' || page === 'alerts') {
         fetchNotifications();
     }
 }
+

@@ -11,6 +11,7 @@ const notesRoutes = require('./routes/notesRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const reminderRoutes = require('./routes/reminderRoutes');
 const tasksRoutes = require('./routes/tasksRoutes');
+const financeRoutes = require('./routes/financeRoutes');
 const { processRecurringReminders } = require('./Utils/ReminderScheduler');
 
 const app = express();
@@ -81,6 +82,7 @@ app.use('/api/notes', notesRoutes);
 app.use('/api/notification', notificationRoutes);
 app.use('/api/reminders', reminderRoutes);
 app.use('/api/tasks', tasksRoutes);
+app.use('/api/finance', financeRoutes);
 
 // Start server
 const PORT = process.env.PORT || 5000;

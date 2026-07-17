@@ -326,7 +326,8 @@
                     ">
                         Available funds
                     </p>
-                    <button class="btn" style="
+                     <div style="display:flex; gap:8px; justify-content:center; flex-wrap:wrap;">
+                    <button class="btn" id="openAddFunds" style="
                         padding:12px 32px;
                         border-radius:99px;
                         font-size:0.9rem;
@@ -338,23 +339,23 @@
                         </i>
                         Add Funds
                     </button>
+                     <button class="btn wallet-btn-secondary" id="openWithdraw">
+                    <i class="fa-solid fa-arrow-up" style="margin-right:6px;"></i>
+                    Withdraw
+                </button>
+                <button class="btn wallet-btn-secondary" id="openNewPlan">
+                    <i class="fa-solid fa-bullseye" style="margin-right:6px;"></i>
+                    New Plan
+                </button>
+                   </div>
                 </div>
 
                 <hr>
 
                 <div style="padding:4px 0 8px;">
-                    <p style="
-                        font-size:0.72rem;
-                        font-weight:700;
-                        text-transform:uppercase;
-                        letter-spacing:1px;
-                        color:var(--text-muted);
-                        margin-bottom:12px;
-                        font-family:'JetBrains Mono',monospace;
-                    ">
-                        Recent Transactions
-                    </p>
-                    <div style="
+                    <p  class="wallet-section-label">Active Plans</p>
+                    <div id="walletPlanList">
+                        <div style="
                         text-align:center;
                         padding:24px;
                         color:var(--text-muted);
@@ -364,20 +365,145 @@
                         border-radius:var(--radius);
                         border:1.5px dashed var(--border);
                     ">
-                        <div style="font-size:1.8rem;margin-bottom:8px;">
-                            🧾
-                        </div>
-                        No transactions yet
+                        <div style="font-size:1.8rem;margin-bottom:8px;">🎯</div>
+                        No plans yet
                     </div>
                 </div>
-
+            </div>
+       <hr>
+        <div style="padding:4px 0 8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+                <p class="wallet-section-label" style="margin-bottom:0;">Recent Transactions</p>
+                <button id="viewAllTx" style="
+                    background:none; border:none; cursor:pointer;
+                    color:#4f8ef7; font-size:0.78rem;
+                    font-family:'Inter',sans-serif; font-weight:600;
+                ">View all</button>
+            </div>
+             <div id="walletTxList">
+                <div style="
+                    text-align:center;
+                    padding:24px;
+                    color:var(--text-muted);
+                    font-size:0.84rem;
+                    font-family:'Inter',sans-serif;
+                    background:var(--surface-2);
+                    border-radius:var(--radius);
+                    border:1.5px dashed var(--border);
+                ">
+                 <div style="font-size:1.8rem;margin-bottom:8px;">🧾</div>
+                    No transactions yet
+                </div>
             </div>
         </div>
-        <!-- end walletPageInner -->
-
     </div>
-    <!-- end accountSection -->
-<!-- ── Confirm Delete Modal ── -->
+</div>
+  <!-- Add fundsand withdrawal modal -->
+<div class="wallet-modal-overlay" id="walletTxModal" hidden>
+    <div class="wallet-modal">
+        <div class="wallet-modal-head">
+            <h3 id="walletTxModalTitle">Add Funds</h3>
+            <button class="wallet-icon-btn" data-close="walletTxModal"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="walletTxForm">
+            <input type="hidden" id="walletTxType" value="deposit" />
+
+            <label class="wallet-field-label">Amount</label>
+            <input class="wallet-input" type="number" id="walletTxAmount" placeholder="0.00" step="0.01" min="0.01" required />
+
+            <label class="wallet-field-label">Reason</label>
+            <input class="wallet-input" type="text" id="walletTxReason" placeholder="e.g. Freelance payment" required />
+ <label class="wallet-field-label">Category</label>
+            <select class="wallet-input" id="walletTxCategory">
+                <option value="income">Income</option>
+                <option value="savings">Savings</option>
+                <option value="essentials">Essentials</option>
+                <option value="education">Education</option>
+                <option value="leisure">Leisure</option>
+                <option value="other">Other</option>
+            </select>
+            <label class="wallet-field-label">Date</label>
+            <input class="wallet-input" type="date" id="walletTxDate" required />
+
+            <label class="wallet-field-label">Link to plan (optional)</label>
+            <select class="wallet-input" id="walletTxPlan">
+                <option value="">None</option>
+            </select>
+
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button type="button" class="btn wallet-btn-secondary" style="flex:1;" data-close="walletTxModal">Cancel</button>
+                <button type="submit" class="btn" id="walletTxSubmit" style="
+                    flex:1;
+                    background:linear-gradient(135deg,#4f8ef7,#6c63ff);
+                    border-radius:99px;
+                ">Add deposit</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- New Plan modal -->
+<div class="wallet-modal-overlay" id="walletPlanModal" hidden>
+    <div class="wallet-modal">
+        <div class="wallet-modal-head">
+            <h3>Create Finance Plan</h3>
+            <button class="wallet-icon-btn" data-close="walletPlanModal"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="walletPlanForm">
+            <label class="wallet-field-label">Plan name</label>
+            <input class="wallet-input" type="text" id="walletPlanName" placeholder="e.g. Emergency fund" required />
+
+            <label class="wallet-field-label">Target amount</label>
+            <input class="wallet-input" type="number" id="walletPlanTarget" placeholder="0.00" step="0.01" min="1" required />
+
+            <label class="wallet-field-label">Deadline</label>
+            <input class="wallet-input" type="date" id="walletPlanDeadline" required />
+
+            <label class="wallet-field-label">Reason</label>
+            <input class="wallet-input" type="text" id="walletPlanReason" placeholder="e.g. 3-month safety cushion" required />
+
+            <label class="wallet-field-label">Category</label>
+            <select class="wallet-input" id="walletPlanCategory">
+                <option value="savings">Savings</option>
+                <option value="purchase">Purchase</option>
+                <option value="debt">Debt payoff</option>
+                <option value="travel">Travel</option>
+                <option value="other">Other</option>
+            </select>
+
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button type="button" class="btn wallet-btn-secondary" style="flex:1;" data-close="walletPlanModal">Cancel</button>
+                <button type="submit" class="btn" style="
+                    flex:1;
+                    background:linear-gradient(135deg,#4f8ef7,#6c63ff);
+                    border-radius:99px;
+                ">Create plan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- All transactions modal -->
+<div class="wallet-modal-overlay" id="walletAllTxModal" hidden>
+    <div class="wallet-modal" style="max-width:480px;">
+        <div class="wallet-modal-head">
+            <h3>All Transactions</h3>
+            <button class="wallet-icon-btn" data-close="walletAllTxModal"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <div style="display:flex; gap:8px; margin-bottom:14px;">
+            <select class="wallet-input" id="walletFilterType" style="margin-bottom:0;">
+                <option value="">All types</option>
+                <option value="deposit">Deposits</option>
+                <option value="withdraw">Withdrawals</option>
+            </select>
+            <select class="wallet-input" id="walletFilterCategory" style="margin-bottom:0;">
+                <option value="">All categories</option>
+            </select>
+         </div>
+    <div id="walletAllTxList" style="max-height:360px; overflow-y:auto;"></div>
+    </div>
+</div>
+
 <div id="confirmModal" style="display:none;">
     <div class="confirm-backdrop"></div>
     <div class="confirm-box">

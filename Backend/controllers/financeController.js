@@ -84,128 +84,144 @@ exports.deleteWallet = async (req, res) => {
 // ─── TRANSACTION CONTROLLERS ───────────────────────────────────────
 
 exports.addTransaction = async (req, res) => {
+  const { category, amount, type, walletId, description, date, linkedGoal, linkedPlan } = req.body
+
+  if (!walletId) return error(res, 'walletId is required', 400)
+  if (!amount || amount <= 0) return error(res, 'amount must be > 0', 400)
+
+  const session = await mongoose.startSession()
+  let transaction = null
+
   try {
-    const { category, amount, type, walletId, description, date, linkedGoal, linkedPlan } = req.body
-
-    if (!walletId) return error(res, 'walletId is required', 400)
-    if (!amount || amount <= 0) return error(res, 'amount must be > 0', 400)
-
-    const wallet = await Wallet.findOne({ _id: walletId, user: req.user.id })
-    if (!wallet) return error(res, 'Wallet not found', 404)
-
-    const balanceBefore = wallet.balance
-
-    if (type === 'expense' || type === 'withdraw') {
-
-      if (wallet.balance < amount) {
-        return error(res, 'Insufficient wallet balance', 400)
+    await session.withTransaction(async () => {
+      const fail = (message, status = 400) => {
+        const err = new Error(message)
+        err.status = status
+        throw err
       }
 
-      if (type === 'expense') {
-        const month = new Date().toISOString().slice(0, 7)
-        const budget = await Budget.findOne({ user: req.user.id, category, month })
+      const wallet = await Wallet.findOne({ _id: walletId, user: req.user.id }).session(session)
+      if (!wallet) fail('Wallet not found', 404)
 
-        if (budget) {
-          const spent = await Transaction.aggregate([
-            {
-              $match: {
-                user: new mongoose.Types.ObjectId(req.user.id),
-                category,
-                type: 'expense'
+      const balanceBefore = wallet.balance
+
+      if (type === 'expense' || type === 'withdraw') {
+        if (wallet.balance < amount) {
+          fail('Insufficient wallet balance', 400)
+        }
+
+        if (type === 'expense') {
+          const month = new Date().toISOString().slice(0, 7)
+          const budget = await Budget.findOne({ user: req.user.id, category, month }).session(session)
+
+          if (budget) {
+            const spent = await Transaction.aggregate([
+              {
+                $match: {
+                  user: new mongoose.Types.ObjectId(req.user.id),
+                  category,
+                  type: 'expense'
+                }
+              },
+              {
+                $group: {
+                  _id: null,
+                  total: { $sum: '$amount' }
+                }
               }
-            },
-            {
-              $group: {
-                _id: null,
-                total: { $sum: '$amount' }
-              }
+            ])
+
+            const totalSpent = spent[0]?.total || 0
+            if (totalSpent + amount > budget.limit) {
+              fail(`Budget limit exceeded for ${category}`, 400)
             }
-          ])
-
-          const totalSpent = spent[0]?.total || 0
-          if (totalSpent + amount > budget.limit) {
-            return error(res, `Budget limit exceeded for ${category}`, 400)
           }
         }
+
+        wallet.balance -= amount
+
+      } else if (type === 'deposit') {
+        wallet.balance += amount
+
+      } else if (type === 'transfer') {
+        const { toWalletId } = req.body
+        if (!toWalletId) fail('toWalletId is required for transfers', 400)
+
+        if (wallet.balance < amount) {
+          fail('Insufficient wallet balance', 400)
+        }
+
+        const toWallet = await Wallet.findOne({ _id: toWalletId, user: req.user.id }).session(session)
+        if (!toWallet) fail('Destination wallet not found', 404)
+
+        wallet.balance -= amount
+        toWallet.balance += amount
+        await toWallet.save({ session })
       }
 
-      wallet.balance -= amount
+      await wallet.save({ session })
 
-    } else if (type === 'deposit') {
-      wallet.balance += amount
+      const [created] = await Transaction.create(
+        [{
+          user: req.user.id,
+          wallet: walletId,
+          type,
+          amount,
+          category,
+          description,
+          linkedGoal: linkedGoal || null,
+          linkedPlan: linkedPlan || null,
+          balanceBefore,
+          balanceAfter: wallet.balance,
+          date: date || Date.now()
+        }],
+        { session }
+      )
 
-    } else if (type === 'transfer') {
-      const { toWalletId } = req.body
-      if (!toWalletId) return error(res, 'toWalletId is required for transfers', 400)
+      transaction = created
 
-      if (wallet.balance < amount) {
-        return error(res, 'Insufficient wallet balance', 400)
+      if (linkedGoal) {
+        const Goal = require('../models/Goal')
+        const goal = await Goal.findOne({ _id: linkedGoal, user: req.user.id }).session(session)
+        if (goal) {
+          if (type === 'deposit') {
+            goal.savedAmount += amount
+          } else if (type === 'expense' || type === 'withdraw') {
+            goal.savedAmount = Math.max(0, goal.savedAmount - amount)
+          }
+
+          if (goal.targetAmount) {
+            goal.progress = Math.min(100, Math.round((goal.savedAmount / goal.targetAmount) * 100))
+            if (goal.progress === 100) goal.status = 'completed'
+          }
+
+          await goal.save({ session })
+        }
       }
 
-      const toWallet = await Wallet.findOne({ _id: toWalletId, user: req.user.id })
-      if (!toWallet) return error(res, 'Destination wallet not found', 404)
-
-      wallet.balance -= amount
-      toWallet.balance += amount
-      await toWallet.save()
-    }
-
-    await wallet.save()
-
-    const transaction = await Transaction.create({
-      user: req.user.id,
-      wallet: walletId,
-      type,
-      amount,
-      category,
-      description,
-      linkedGoal: linkedGoal || null,
-      linkedPlan: linkedPlan || null,
-      balanceBefore,
-      balanceAfter: wallet.balance,
-      date: date || Date.now()
+      if (linkedPlan) {
+        const plan = await Budget.findOne({ _id: linkedPlan, user: req.user.id }).session(session)
+        if (plan) {
+          if (type === 'deposit') {
+            plan.savedAmount = (plan.savedAmount || 0) + amount
+          } else if (type === 'expense' || type === 'withdraw') {
+            plan.savedAmount = Math.max(0, (plan.savedAmount || 0) - amount)
+          }
+          if (plan.targetAmount && plan.targetAmount > 0) {
+            plan.progress = Math.min(100, Math.round((plan.savedAmount / plan.targetAmount) * 100))
+            if (plan.progress === 100) plan.status = 'completed'
+          }
+          await plan.save({ session })
+        }
+      }
     })
-
-    // Update goal savedAmount if transaction is linked to a goal
-    if (linkedGoal) {
-      const Goal = require('../models/Goal')
-      const goal = await Goal.findOne({ _id: linkedGoal, user: req.user.id })
-      if (goal) {
-        if (type === 'deposit') {
-          goal.savedAmount += amount
-        } else if (type === 'expense' || type === 'withdraw') {
-          goal.savedAmount = Math.max(0, goal.savedAmount - amount)
-        }
-
-        if (goal.targetAmount) {
-          goal.progress = Math.min(100, Math.round((goal.savedAmount / goal.targetAmount) * 100))
-          if (goal.progress === 100) goal.status = 'completed'
-        }
-
-        await goal.save()
-      }
-    }
-
-    // Update plan (Budget) savedAmount/progress if linkedPlan provided
-    if (linkedPlan) {
-      const plan = await Budget.findOne({ _id: linkedPlan, user: req.user.id })
-      if (plan) {
-        if (type === 'deposit') {
-          plan.savedAmount = (plan.savedAmount || 0) + amount
-        } else if (type === 'expense' || type === 'withdraw') {
-          plan.savedAmount = Math.max(0, (plan.savedAmount || 0) - amount)
-        }
-        if (plan.targetAmount && plan.targetAmount > 0) {
-          plan.progress = Math.min(100, Math.round((plan.savedAmount / plan.targetAmount) * 100))
-          if (plan.progress === 100) plan.status = 'completed'
-        }
-        await plan.save()
-      }
-    }
 
     success(res, transaction, 'Transaction added', 201)
   } catch (err) {
+    if (err.status) return error(res, err.message, err.status)
     error(res, err.message, 500)
+  } finally {
+    session.endSession()
   }
 }
 

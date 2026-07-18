@@ -13,14 +13,11 @@ const BudgetSchema = new mongoose.Schema({
   },
   limit: {
     type: Number,
-    required: true,
     min: 0
   },
   month: {
     type: String, // format: "2025-01"
-    required: true
-  }
-  ,
+  },
   // New fields to support "finance plans" (savings goals)
   type: {
     type: String,
@@ -52,7 +49,10 @@ const BudgetSchema = new mongoose.Schema({
   }
 }, { timestamps: true })
 
-// Prevent duplicate budget for same user+category+month
-BudgetSchema.index({ user: 1, category: 1, month: 1 }, { unique: true })
+// Prevent duplicate budget for same user+category+month for monthly budgets only
+BudgetSchema.index(
+  { user: 1, category: 1, month: 1 },
+  { unique: true, partialFilterExpression: { type: 'budget' } }
+)
 
 module.exports = mongoose.model('Budget', BudgetSchema)

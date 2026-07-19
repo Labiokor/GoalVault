@@ -84,7 +84,7 @@ exports.deleteWallet = async (req, res) => {
 // ─── TRANSACTION CONTROLLERS ───────────────────────────────────────
 
 exports.addTransaction = async (req, res) => {
-  const { category, amount, type, walletId, description, date, linkedGoal, linkedPlan } = req.body
+  const { category, amount, type, walletId, description, date, linkedGoal, linkedPlan, testRollback } = req.body
 
   if (!walletId) return error(res, 'walletId is required', 400)
   if (!amount || amount <= 0) return error(res, 'amount must be > 0', 400)
@@ -161,6 +161,12 @@ exports.addTransaction = async (req, res) => {
 
       await wallet.save({ session })
 
+      // ROLLBACK TEST: Deliberately throw if _testRollback flag is set in request body.
+      // This tests that the Mongoose session rolls back even though wallet.save() succeeded above.
+      if (testRollback === true) {
+        throw new Error('Forced failure for rollback test - wallet save should be rolled back')
+      }
+
       const [created] = await Transaction.create(
         [{
           user: req.user.id,
@@ -199,12 +205,17 @@ exports.addTransaction = async (req, res) => {
         }
       }
 
+      // INTENTIONAL: If linkedPlan ID does not resolve to a real plan, the transaction is still allowed
+      // through; only the plan update is skipped. This avoids rejecting user actions due to data inconsistency.
+      // The wallet balance change is atomic and always succeeds (or rolls back entirely on other errors).
       if (linkedPlan) {
         const plan = await Budget.findOne({ _id: linkedPlan, user: req.user.id }).session(session)
         if (plan) {
           if (type === 'deposit') {
             plan.savedAmount = (plan.savedAmount || 0) + amount
           } else if (type === 'expense' || type === 'withdraw') {
+            // INTENTIONAL: Withdrawals linked to a plan decrease that plan's savedAmount.
+            // This models "spending from a goal" which reduces the progress toward that goal.
             plan.savedAmount = Math.max(0, (plan.savedAmount || 0) - amount)
           }
           if (plan.targetAmount && plan.targetAmount > 0) {

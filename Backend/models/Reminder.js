@@ -15,6 +15,11 @@ const ReminderSchema = new mongoose.Schema({
     enum: ['daily', 'weekly', 'monthly'],
     default: null
   },
+  category: { 
+    type: String, 
+    enum: ['personal', 'work', 'health', 'finance', 'goal', 'default'],
+    default: 'personal' 
+  },
   completed: { type: Boolean, default: false }    // needed to mark reminders as done
 }, { timestamps: true })
 

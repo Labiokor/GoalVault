@@ -397,7 +397,24 @@ function updateStreakDisplay() {
     if (streakCount)   streakCount.textContent = streak;
     if (streakTooltip) streakTooltip.textContent = `Current streak: ${streak} day${streak === 1 ? '' : 's'}`;
     localStorage.setItem('streak', streak);
+    applyStreakVisualState(streak);
     updateStreakPanel();
+}
+
+/**
+ * Applies visual state for streak based on streakVal.
+ * streak-zero class turns the fire icon dark red at 0.
+ * Works on both the nav streak-icon and the hero streak-flame.
+ */
+function applyStreakVisualState(streakVal) {
+    const icons = document.querySelectorAll('.streak-icon, .streak-flame');
+    icons.forEach(el => {
+        if (streakVal === 0) {
+            el.classList.add('streak-zero');
+        } else {
+            el.classList.remove('streak-zero');
+        }
+    });
 }
 
 function updateStreakPanel() {
@@ -407,11 +424,13 @@ function updateStreakPanel() {
     const streakNote  = document.getElementById('streakNote');
     if (!streakTitle) return;
     streakTitle.innerHTML = `${streak}-Day Winning<br>Streak`;
-    let badge = '🔥 KEEP GOING';
-    if (streak >= 7)  badge = '🔥 CONSISTENT';
-    if (streak >= 14) badge = '🔥 MASTER CONSISTENCY';
-    if (streak >= 21) badge = '🔥 UNSTOPPABLE';
-    if (streak >= 30) badge = '🏆 LEGEND';
+    let badge;
+    if (streak === 0)  badge = '🚀 START TODAY';
+    else if (streak >= 30) badge = '🏆 LEGEND';
+    else if (streak >= 21) badge = '🔥 UNSTOPPABLE';
+    else if (streak >= 14) badge = '🔥 MASTER CONSISTENCY';
+    else if (streak >= 7)  badge = '🔥 CONSISTENT';
+    else                   badge = '🔥 KEEP GOING';
     streakBadge.textContent = badge;
     const total = 18;
     streakDots.innerHTML = '';
@@ -520,7 +539,6 @@ if (page === 'reminders') {
         let snoozeTargetId = null;
         let currentCat = 'personal';
         let currentFreq = 'once';
-        let currentColor = '#7c3aed';
 
         const CAT_CONFIG = {
             personal: { icon: '🙂', label: 'Personal', color: '#7c3aed' },
@@ -583,7 +601,7 @@ if (page === 'reminders') {
             const now = new Date();
             const rDate = new Date(r.datetime);
             
-            let color = r.color || cat.color;
+            let color = cat.color;
             let stateClass = '';
             let overdue = false;
             let dueSoon = false;
@@ -693,9 +711,7 @@ if (page === 'reminders') {
             document.getElementById('statUpcoming').textContent = upcoming.length;
             document.getElementById('statOverdue').textContent = overdueCount;
             document.getElementById('statCompleted').textContent = completed.length;
-            document.getElementById('tabBadgeUpcoming').textContent = upcoming.length;
-            document.getElementById('tabBadgeOverdue').textContent = overdueCount;
-            document.getElementById('tabBadgeCompleted').textContent = completed.length;
+
 
             const nextEl = document.getElementById('statNext');
             if (upcoming.length > 0) {
@@ -758,7 +774,7 @@ if (page === 'reminders') {
                 return;
             }
 
-            const body = { title, datetime, notes, recurring, recurrenceType, category: currentCat, color: currentColor };
+            const body = { title, datetime, notes, recurring, recurrenceType, category: currentCat };
 
             try {
                 let res;
@@ -870,7 +886,6 @@ if (page === 'reminders') {
             document.getElementById('remTimeInput').value = `${hours}:${mins}`;
 
             currentCat = r.category || 'personal';
-            currentColor = r.color || '#7c3aed';
             currentFreq = r.recurrenceType || 'once';
 
             updatePickers();
@@ -888,13 +903,11 @@ if (page === 'reminders') {
             document.getElementById('remDateTimeError').classList.remove('visible');
             currentCat = 'personal';
             currentFreq = 'once';
-            currentColor = '#7c3aed';
             updatePickers();
         }
 
         function updatePickers() {
             document.querySelectorAll('.rem-cat-btn').forEach(b => b.classList.toggle('active-cat', b.dataset.cat === currentCat));
-            document.querySelectorAll('.rem-color-btn').forEach(b => b.classList.toggle('active-color', b.dataset.color === currentColor));
             document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(b => b.classList.toggle('active-freq', b.dataset.freq === currentFreq));
         }
 
@@ -914,7 +927,6 @@ if (page === 'reminders') {
         document.getElementById('closeSnoozeModal')?.addEventListener('click', () => { closeOverlay('snoozeModalOverlay'); snoozeTargetId = null; });
 
         document.querySelectorAll('.rem-cat-btn').forEach(btn => btn.addEventListener('click', function() { currentCat = this.dataset.cat; updatePickers(); }));
-        document.querySelectorAll('.rem-color-btn').forEach(btn => btn.addEventListener('click', function() { currentColor = this.dataset.color; updatePickers(); }));
         document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(btn => btn.addEventListener('click', function() { currentFreq = this.dataset.freq; updatePickers(); }));
         document.querySelectorAll('.rem-snooze-btn').forEach(btn => btn.addEventListener('click', function() { snoozeReminder(parseInt(this.dataset.snooze)); }));
 
@@ -946,6 +958,7 @@ if (page === 'reminders') {
 if (page === 'dashboard') {
 
     function badgeText(s) {
+        if (s === 0)  return '"Complete a habit to start your streak! 🎯"';
         if (s >= 100) return '🏆 LEGEND';
         if (s >= 60)  return '⚡ UNSTOPPABLE';
         if (s >= 30)  return '🌟 ON FIRE';
@@ -953,6 +966,21 @@ if (page === 'dashboard') {
         if (s >= 14)  return '💪 CONSISTENT';
         if (s >= 7)   return '✨ BUILDING MOMENTUM';
         return '🎯 KEEP GOING';
+    }
+
+    /**
+     * Returns a time-of-day greeting based on local browser hours.
+     * 5–11  → Good morning
+     * 12–16 → Good afternoon
+     * 17–20 → Good evening
+     * 21–4  → Good night
+     */
+    function getTimeGreeting() {
+        const h = new Date().getHours();
+        if (h >= 5  && h < 12) return 'Good morning';
+        if (h >= 12 && h < 17) return 'Good afternoon';
+        if (h >= 17 && h < 21) return 'Good evening';
+        return 'Good night';
     }
 
     function buildDots(streakVal) {
@@ -983,6 +1011,9 @@ if (page === 'dashboard') {
         const now    = new Date();
         const el     = document.getElementById('dashDate');
         if (el) el.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
+        // Set time-of-day greeting dynamically
+        const eyebrow = document.querySelector('.dash-greeting .eyebrow');
+        if (eyebrow) eyebrow.textContent = getTimeGreeting();
     }
 
     async function refreshDash() {
@@ -1070,7 +1101,7 @@ if (page === 'dashboard') {
             if (dashRemindersNum) dashRemindersNum.textContent = reminderCount;
             if (dashRemindersSub) dashRemindersSub.textContent = reminderCount === 0 ? 'no active reminders' : 'upcoming';
             
-            const sorted = [...activeReminders].sort((a, b) => new Date(a.time) - new Date(b.time));
+            const sorted = [...activeReminders].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
 
             if (reminderTrend) {
                 if (reminderCount === 0) {
@@ -1078,7 +1109,7 @@ if (page === 'dashboard') {
                     reminderTrend.className = 'stat-trend neu';
                 } else {
                     const nextReminder = sorted[0];
-                    const hoursLeft = Math.round((new Date(nextReminder.time) - new Date()) / (1000 * 60 * 60));
+                    const hoursLeft = Math.round((new Date(nextReminder.datetime) - new Date()) / (1000 * 60 * 60));
                     if (hoursLeft < 1) {
                         reminderTrend.textContent = 'Soon!';
                         reminderTrend.className = 'stat-trend warn';
@@ -1102,7 +1133,7 @@ if (page === 'dashboard') {
                             <span class="dash-item-icon">⏰</span>
                             <div class="dash-item-info">
                                 <div class="dash-item-title">${r.title}</div>
-                                <div class="dash-item-time">${new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                <div class="dash-item-time">${new Date(r.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                             </div>
                         </div>
                     `).join('');
@@ -1145,7 +1176,13 @@ if (page === 'dashboard') {
         const heroStreakNum = document.getElementById('heroStreakNum');
         const heroStreakBadge = document.getElementById('heroStreakBadge');
         if (heroStreakNum) heroStreakNum.textContent = streakVal;
-        if (heroStreakBadge) heroStreakBadge.textContent = badgeText(streakVal);
+        if (heroStreakBadge) {
+            heroStreakBadge.textContent = badgeText(streakVal);
+            heroStreakBadge.classList.toggle('streak-badge-plain', streakVal === 0);
+        }
+
+        // Apply zero-streak visual state to hero flame + nav icon
+        applyStreakVisualState(streakVal);
 
         buildDots(Math.min(streakVal, 21));
         updateRing(streakVal);

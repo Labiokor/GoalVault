@@ -16,13 +16,13 @@ GOAL VAULT — style.css
   --green: #2dca8c;
   --green-light: rgba(45,202,140,0.12);
 
-  --bg: #f0f2f7;
+  --bg: #e6e9ef;
   --bg-dots: radial-gradient(circle, rgba(26,35,50,0.04) 1px, transparent 1px);
-  --surface: #ffffff;
-  --surface-2: #f7f9fc;
-  --surface-glass: rgba(255,255,255,0.7);
-  --border: #e4e9f2;
-  --border-strong: #cdd4e4;
+  --surface: #f5f6f8;
+  --surface-2: #edf0f4;
+  --surface-glass: rgba(245, 246, 248, 0.7);
+  --border: #dce1eb;
+  --border-strong: #c5ccdd;
 
   --text-primary: #111827;
   --text-sub: #6b7a92;
@@ -527,8 +527,42 @@ button:active { transform: translateY(0); }
   60% { transform: scale(0.97) rotate(-1deg); }
 }
 
+/* ── Streak zero state ──────────────────────────────── */
+/*
+  CSS `color` cannot recolor emoji rendered as glyph images.
+  We use a filter chain (grayscale → sepia → saturate → hue-rotate)
+  to shift the flame to dark red (#dc2626-ish) on Windows/Chrome.
+*/
+.streak-zero {
+  filter: grayscale(1) sepia(1) saturate(5) hue-rotate(300deg) brightness(0.75) !important;
+}
+
+/* ── Zero-streak nudge line (below hero, streak === 0) ── */
+.streak-nudge {
+  font-size: 0.82rem;
+  color: var(--accent);
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  margin-top: -10px;
+  margin-bottom: 14px;
+  padding: 8px 14px;
+  background: rgba(255,107,53,0.07);
+  border: 1px solid rgba(255,107,53,0.18);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  animation: fadeUp .4s .15s ease both;
+}
+
+
 .streak-text { z-index: 1; flex: 1; min-width: 120px; }
+.streak-num-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .streak-text .streak-num {
+
   font-family: 'Poppins', sans-serif;
   font-size: 3rem;
   font-weight: 800;
@@ -539,7 +573,6 @@ button:active { transform: translateY(0); }
 .streak-text .streak-label {
   font-size: 0.85rem;
   color: rgba(255,255,255,0.8);
-  margin-top: 5px;
   font-weight: 500;
   font-family: 'Inter', sans-serif;
 }
@@ -553,10 +586,32 @@ button:active { transform: translateY(0); }
   font-family: 'JetBrains Mono', monospace;
   font-size: 0.62rem;
   font-weight: 600;
-  letter-spacing: 2px;
+  letter-spacing: 1.5px;
   text-transform: uppercase;
   padding: 5px 12px;
-  border-radius: 99px;
+  border-radius: 10px;
+  max-width: 260px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+/* Zero-streak: plain text, no badge container */
+.streak-text .streak-badge.streak-badge-plain {
+  background: none;
+  border: none;
+  backdrop-filter: none;
+  padding: 0;
+  border-radius: 0;
+  max-width: none;
+  letter-spacing: 0;
+  text-transform: none;
+  font-size: 0.85rem;
+  font-weight: 500;
+  font-family: 'Inter', sans-serif;
+  color: rgba(255,255,255,0.85);
+  line-height: 1.4;
+  text-align: left;
+  margin-top: 8px;
 }
 
 .streak-dots-wrap {

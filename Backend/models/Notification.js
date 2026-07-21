@@ -16,7 +16,7 @@ const NotificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['task', 'habit', 'goal', 'reminder', 'general'],
+    enum: ['task', 'habit', 'goal', 'reminder', 'finance', 'general'],
     default: 'general'
   },
   read: {

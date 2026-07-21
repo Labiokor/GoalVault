@@ -163,6 +163,24 @@ exports.addTransaction = async (req, res) => {
       date: date || Date.now()
     })
 
+    // Create finance notification (used by /pages/notification.html UI)
+    const Notification = require('../models/Notification')
+    const title = `Finance: ${type.charAt(0).toUpperCase() + type.slice(1)}`
+    const message = [
+      `${type.toUpperCase()}`,
+      category ? `Category: ${category}` : null,
+      typeof description === 'string' && description.trim() ? `Description: ${description.trim()}` : null,
+      `Amount: ${amount}`,
+    ].filter(Boolean).join(' · ')
+
+    await Notification.create({
+      user: req.user.id,
+      title,
+      message,
+      type: 'finance',
+      read: false
+    })
+
     // Update goal savedAmount if transaction is linked to a goal
     if (linkedGoal) {
       const Goal = require('../models/Goal')

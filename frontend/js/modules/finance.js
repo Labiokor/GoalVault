@@ -582,7 +582,8 @@ async function saveTransaction() {
   const type        = document.getElementById('tx-type')?.value
   const amount      = parseFloat(document.getElementById('tx-amount')?.value)
   const category    = document.getElementById('tx-category')?.value.trim()
-  const description = document.getElementById('tx-description')?.value.trim()
+  const descriptionRaw = document.getElementById('tx-description')?.value ?? ''
+  const description = descriptionRaw.trim()
   const walletId    = document.getElementById('tx-wallet')?.value
   const toWalletId  = document.getElementById('tx-to-wallet')?.value
   const errorBox    = document.getElementById('transaction-form-error')
@@ -592,6 +593,40 @@ async function saveTransaction() {
   if (!amount || amount <= 0) { showError(errorBox, 'Please enter a valid amount'); return }
   if (!category)   { showError(errorBox, 'Category is required'); return }
   if (!walletId)   { showError(errorBox, 'Please select a wallet'); return }
+
+  // Withdrawals MUST include a description and it must match the budget goal.
+  if (type === 'withdraw') {
+    if (!description) {
+      showError(errorBox, 'Withdrawal description is required');
+      return
+    }
+
+    const now = new Date()
+    const month = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0')
+    const budgetForCategoryMonth = budgets.find(b => b.category === category && b.month === month)
+
+    if (budgetForCategoryMonth?.goal) {
+      const normalize = (s) => String(s || '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim()
+        .replace(/\s+/g, ' ')
+
+      const normTxnDesc = normalize(description)
+      const normBudgetGoal = normalize(budgetForCategoryMonth.goal)
+
+      const matches = normTxnDesc === normBudgetGoal
+      if (!matches) {
+        const ok = confirm(
+          'Mismatch detected for withdrawal description.\n\n' +
+          'Budget goal: "' + budgetForCategoryMonth.goal + '"\n' +
+          'Your withdrawal description: "' + (descriptionRaw) + '"\n\n' +
+          'Press OK to continue and create the transaction, or Cancel to cancel.'
+        )
+        if (!ok) return
+      }
+    }
+  }
 
   errorBox?.classList.add('hidden')
   btn.textContent = 'Processing...'

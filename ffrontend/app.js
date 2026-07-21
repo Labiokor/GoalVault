@@ -180,10 +180,18 @@ async function syncStreakGlobally() {
     }
 }
 
+let reminderInterval;
+let badgeInterval;
+
 function initGlobals() {
     updateNotifBadge();
     autoSetNavActive();
     syncStreakGlobally(); // keep streak in sync on every page
+
+    // Initial check & interval polling
+    pollDueReminders();
+    if (!reminderInterval) reminderInterval = setInterval(pollDueReminders, 30000);
+    if (!badgeInterval) badgeInterval = setInterval(updateNotifBadge, 30000);
 }
 if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', initGlobals);
@@ -209,41 +217,52 @@ function autoSetNavActive() {
 // ============================================================
 // GLOBAL REMINDER CHECKER
 // ============================================================
-function initGlobalReminders() {
-    const reminders = JSON.parse(localStorage.getItem('reminders') || '[]');
-    const now       = new Date();
-    reminders.forEach(reminder => {
-        const reminderTime = new Date(reminder.time);
-        const delay        = reminderTime - now;
-        if (reminder.triggered || delay <= 0) return;
-        setTimeout(() => {
-            const updated = JSON.parse(localStorage.getItem('reminders') || '[]');
-            const r       = updated.find(rem => rem.id === reminder.id);
-            if (r) { r.triggered = true; localStorage.setItem('reminders', JSON.stringify(updated)); }
-            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                try {
-                    new Notification('⏰ Goal Vault Reminder', {
-                        body: reminder.label,
-                        icon: 'https://img.icons8.com/fluency/96/alarm.png',
-                    });
-                } catch (e) { /* silent */ }
+const shownReminders = new Set();
+
+async function pollDueReminders() {
+    try {
+        const token = localStorage.getItem('gv_token');
+        if (!token) return; // Wait until authenticated
+        
+        const res = await apiFetch('/api/reminders?completed=false');
+        if (!res || !res.data) return;
+        
+        const now = new Date();
+        res.data.forEach(reminder => {
+            const reminderTime = new Date(reminder.datetime);
+            const rId = reminder._id || reminder.id;
+            
+            if (reminderTime <= now && !shownReminders.has(rId)) {
+                shownReminders.add(rId);
+                
+                if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                    try {
+                        new Notification('⏰ Goal Vault Reminder', {
+                            body: reminder.title,
+                            icon: 'https://img.icons8.com/fluency/96/alarm.png',
+                        });
+                    } catch (e) { /* silent */ }
+                }
+                
+                pushNotification('reminder', 'Reminder fired! ⏰', `Your reminder "${reminder.title}" is due now.`);
+                showToast(`⏰ Reminder: ${reminder.title}`, 'warning');
             }
-            pushNotification('reminder', 'Reminder fired! ⏰', `Your reminder "${reminder.label}" is due now.`);
-            showToast(`⏰ Reminder: ${reminder.label}`, 'warning');
-        }, delay);
-    });
+        });
+    } catch (err) {
+        // Silently fail for background polling to prevent noise
+    }
 }
 
 function requestNotificationPermissionOnce() {
-    if (Notification.permission !== 'default') { initGlobalReminders(); return; }
-    if (localStorage.getItem('notifPermissionAsked')) { initGlobalReminders(); return; }
+    if (typeof Notification === 'undefined') return; // Not supported in this context
+    if (Notification.permission !== 'default') return;
+    if (localStorage.getItem('notifPermissionAsked')) return;
     Notification.requestPermission().then(permission => {
         localStorage.setItem('notifPermissionAsked', 'true');
         localStorage.setItem('notifPermission', permission);
-        initGlobalReminders();
     });
 }
-requestNotificationPermissionOnce();
+try { requestNotificationPermissionOnce(); } catch (e) { /* Notification API unavailable */ }
 
 // ============================================================
 // SHARED TOAST
@@ -474,7 +493,6 @@ const page = (() => {
 // ── Shared data helpers ───────────────────────────────────────
 function getTasks()     { return JSON.parse(localStorage.getItem('tasks'))     || []; }
 function getHabits()    { return JSON.parse(localStorage.getItem('habits'))    || []; }
-function getReminders() { return JSON.parse(localStorage.getItem('reminders')) || []; }
 
 let tasks  = getTasks();
 let habits = getHabits();
@@ -559,13 +577,32 @@ if (page === 'reminders') {
 
         function buildReminderItem(r) {
             const cat = CAT_CONFIG[r.category] || CAT_CONFIG.default;
-            const color = r.color || cat.color;
             const formattedDate = formatReminderDate(r.datetime);
             const freqLabel = FREQ_LABELS[r.recurrenceType] || 'Once';
-            const overdue = !r.completed && new Date(r.datetime) < new Date();
+            
+            const now = new Date();
+            const rDate = new Date(r.datetime);
+            
+            let color = r.color || cat.color;
+            let stateClass = '';
+            let overdue = false;
+            let dueSoon = false;
+            
+            if (r.completed) {
+                stateClass = 'rem-completed';
+                color = '#22c55e'; // Green
+            } else if (rDate < now) {
+                stateClass = 'rem-overdue';
+                overdue = true;
+                color = '#ef4444'; // Red
+            } else if (rDate - now <= 2 * 60 * 60 * 1000) {
+                stateClass = 'rem-due-soon';
+                dueSoon = true;
+                color = '#f59e0b'; // Amber
+            }
 
             const item = document.createElement('div');
-            item.className = `rem-card ${r.completed ? 'rem-completed' : ''} ${overdue ? 'rem-overdue' : ''}`;
+            item.className = `rem-card ${stateClass}`;
             item.style.setProperty('--rem-color', color);
 
             item.innerHTML = `
@@ -585,6 +622,9 @@ if (page === 'reminders') {
                             </span>` : ''}
                             ${overdue ? `<span class="rem-badge overdue-badge">
                                 <i class="fa-solid fa-triangle-exclamation"></i> Overdue
+                            </span>` : ''}
+                            ${dueSoon ? `<span class="rem-badge due-soon-badge">
+                                <i class="fa-solid fa-clock"></i> Due Soon
                             </span>` : ''}
                         </div>
                     </div>
@@ -2033,7 +2073,7 @@ if (page === 'planner') {
         const isLong     = goal.type    === 'long';
         const pct        = Math.min(100, Math.max(0, goal.progress || 0));
         const deadline   = isLong ? formatDeadline(goal.deadline) : null;
-        const hasReminder = getReminders().some(r => r.goalId === goal.id && !r.triggered);
+        const hasReminder = !!goal.hasReminder;
 
         // Count log entries
         const logCount = (goal.progressLog || []).length;
@@ -3723,5 +3763,8 @@ if (page === 'notifications' || page === 'alerts') {
     } else {
         fetchNotifications();
     }
+    
+    // Live polling for the notifications list when actively viewing it
+    setInterval(fetchNotifications, 30000);
 }
 

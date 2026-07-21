@@ -1976,7 +1976,7 @@ button:active { transform: translateY(0); }
 /* ============================================================
    TASKS
 ============================================================ */
-#taskSection { display: block !important; }
+/* Override removed to allow standard flex centering */
 #taskSection h2 { font-size: 1.6rem; font-weight: 700; margin-bottom: 4px; }
 #taskSection > p { color: var(--text-sub); font-size: 0.9rem; margin-bottom: 20px; }
 
@@ -2797,8 +2797,10 @@ li.done .task-check svg { opacity: 1; }
 /* ============================================================
    HABITS
 ============================================================ */
-#habitSection { display: block !important; }
+/* Override removed to allow standard flex centering */
 #habitSection .habit-main-grid {
+  max-width: 1400px;
+  width: 100%;
   display: grid;
   grid-template-columns: 1fr 260px;
   gap: 22px;
@@ -4558,6 +4560,10 @@ body.dark .notif-filter-btn.active { background: var(--nav-bg); }
     border-color: rgba(239,68,68,0.25);
     background: linear-gradient(90deg, rgba(239,68,68,0.03), var(--surface));
 }
+.rem-card.rem-due-soon {
+    border-color: rgba(245,158,11,0.25);
+    background: linear-gradient(90deg, rgba(245,158,11,0.03), var(--surface));
+}
 .rem-card.rem-completed {
     opacity: 0.65;
     background: var(--surface-2);
@@ -4637,6 +4643,11 @@ body.dark .notif-filter-btn.active { background: var(--nav-bg); }
     background: rgba(239,68,68,0.1);
     color: #ef4444;
     border-color: rgba(239,68,68,0.2);
+}
+.rem-badge.due-soon-badge {
+    background: rgba(245,158,11,0.1);
+    color: #f59e0b;
+    border-color: rgba(245,158,11,0.2);
 }
 .rem-badge.done-badge {
     background: rgba(16,185,129,0.1);
@@ -4885,6 +4896,10 @@ body.dark .rem-card         { background: var(--surface); border-color: var(--bo
 body.dark .rem-card.rem-overdue {
     border-color: rgba(239,68,68,0.2);
     background: linear-gradient(90deg, rgba(239,68,68,0.05), var(--surface));
+}
+body.dark .rem-card.rem-due-soon {
+    border-color: rgba(245,158,11,0.2);
+    background: linear-gradient(90deg, rgba(245,158,11,0.05), var(--surface));
 }
 body.dark .rem-card.rem-completed { background: var(--surface-2); }
 body.dark .rem-tab          { background: var(--surface); border-color: var(--border); }

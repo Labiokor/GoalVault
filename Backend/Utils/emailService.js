@@ -239,43 +239,28 @@ function welcomeEmailTemplate(userName) {
 // ─── SEND FUNCTIONS ───────────────────────────────────────────────
 
 exports.sendReminderEmail = async (userEmail, userName, reminder) => {
-  try {
-    await transporter.sendMail({
-      from: '"GoalVault" <' + process.env.EMAIL_USER + '>',
-      to: userEmail,
-      subject: '🔔 Reminder: ' + reminder.title,
-      html: reminderEmailTemplate(userName, reminder)
-    })
-    console.log('Reminder email sent to:', userEmail)
-  } catch (err) {
-    console.error('Failed to send reminder email:', err.message)
-  }
+  await sendMail({
+    from: '"GoalVault" <' + process.env.EMAIL_USER + '>',
+    to: userEmail,
+    subject: '🔔 Reminder: ' + reminder.title,
+    html: reminderEmailTemplate(userName, reminder)
+  })
 }
 
 exports.sendNotificationEmail = async (userEmail, userName, notification) => {
-  try {
-    await transporter.sendMail({
-      from: '"GoalVault" <' + process.env.EMAIL_USER + '>',
-      to: userEmail,
-      subject: '🔔 ' + notification.title,
-      html: notificationEmailTemplate(userName, notification)
-    })
-    console.log('Notification email sent to:', userEmail)
-  } catch (err) {
-    console.error('Failed to send notification email:', err.message)
-  }
+  await sendMail({
+    from: '"GoalVault" <' + process.env.EMAIL_USER + '>',
+    to: userEmail,
+    subject: '🔔 ' + notification.title,
+    html: notificationEmailTemplate(userName, notification)
+  })
 }
 
 exports.sendWelcomeEmail = async (userEmail, userName) => {
-  try {
-    await transporter.sendMail({
-      from: '"GoalVault" <' + process.env.EMAIL_USER + '>',
-      to: userEmail,
-      subject: '🎉 Welcome to GoalVault, ' + userName + '!',
-      html: welcomeEmailTemplate(userName)
-    })
-    console.log('Welcome email sent to:', userEmail)
-  } catch (err) {
-    console.error('Failed to send welcome email:', err.message)
-  }
+  await sendMail({
+    from: '"GoalVault" <' + process.env.EMAIL_USER + '>',
+    to: userEmail,
+    subject: '🎉 Welcome to GoalVault, ' + userName + '!',
+    html: welcomeEmailTemplate(userName)
+  })
 }

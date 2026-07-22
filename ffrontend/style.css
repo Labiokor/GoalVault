@@ -3009,12 +3009,12 @@ li.done .task-check svg { opacity: 1; }
   display: flex;
   align-items: flex-end;
   gap: 3px;
-  height: 65px;
+  height: 85px;
   margin-bottom: 10px;
 }
-#habitSection .bar-col { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+#habitSection .bar-col { display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 4px; flex: 1; height: 100%; }
 #habitSection .bar-day { font-size: 0.54rem; color: var(--on-sv); font-family: 'Inter', sans-serif; }
-#habitSection .bar { width: 100%; border-radius: 4px 4px 0 0; }
+#habitSection .bar { width: 100%; border-radius: 4px 4px 0 0; transition: height 0.3s ease, background 0.3s ease; min-height: 4px; }
 #habitSection .bar.normal { background: linear-gradient(180deg, var(--accent-2), #c7d9f9); }
 #habitSection .bar.peak { background: var(--grad-g); }
 #habitSection .bar.dim { background: var(--surface-2); }
@@ -4469,6 +4469,39 @@ body.dark .rem-stat.filter-stat:hover {
 body.dark .rem-stat.filter-stat.active-filter {
     background: rgba(124,58,237,0.20);
     border-color: transparent;
+}
+.rem-stat.next-up-card {
+    transition: all 0.2s ease;
+}
+.rem-stat.next-up-card.clickable {
+    cursor: pointer;
+}
+.rem-stat.next-up-card.clickable:hover {
+    background: rgba(245,158,11,0.05);
+    border-radius: var(--radius-md);
+}
+body.dark .rem-stat.next-up-card.clickable:hover {
+    background: rgba(245,158,11,0.1);
+}
+
+@keyframes flashHighlight {
+    0% { background: transparent; transform: scale(1); }
+    15% { background: rgba(245,158,11,0.15); transform: scale(1.01); box-shadow: 0 0 0 2px #f59e0b; }
+    50% { background: rgba(245,158,11,0.08); transform: scale(1); box-shadow: 0 0 0 1px rgba(245,158,11,0.5); }
+    100% { background: transparent; transform: scale(1); box-shadow: 0 0 0 0px transparent; }
+}
+@keyframes flashHighlightDark {
+    0% { background: transparent; transform: scale(1); }
+    15% { background: rgba(245,158,11,0.25); transform: scale(1.01); box-shadow: 0 0 0 2px #f59e0b; }
+    50% { background: rgba(245,158,11,0.1); transform: scale(1); box-shadow: 0 0 0 1px rgba(245,158,11,0.5); }
+    100% { background: transparent; transform: scale(1); box-shadow: 0 0 0 0px transparent; }
+}
+
+.reminder-flash-highlight {
+    animation: flashHighlight 1.5s ease-out;
+}
+body.dark .reminder-flash-highlight {
+    animation: flashHighlightDark 1.5s ease-out;
 }
 .rem-stat-icon {
     width: 40px;

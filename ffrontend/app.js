@@ -541,6 +541,7 @@ if (page === 'reminders') {
         let currentFreq = 'once';
         let currentRemSort = 'soonest';
         let activeStatFilter = 'upcoming';
+        let nextUpReminderId = null;
 
         const CAT_CONFIG = {
             personal: { icon: '🙂', label: 'Personal', color: '#7c3aed' },
@@ -623,6 +624,7 @@ if (page === 'reminders') {
 
             const item = document.createElement('div');
             item.className = `rem-card ${stateClass}`;
+            item.dataset.id = r._id;
             item.style.setProperty('--rem-color', color);
 
             item.innerHTML = `
@@ -705,11 +707,17 @@ if (page === 'reminders') {
             document.getElementById('statCompleted').textContent = completed.length;
 
             const nextEl = document.getElementById('statNext');
+            const nextUpCard = document.getElementById('nextUpCard');
             const soonestList = [...upcoming].sort((a,b) => new Date(a.datetime) - new Date(b.datetime));
+            
             if (soonestList.length > 0) {
+                nextUpReminderId = soonestList[0]._id;
                 nextEl.textContent = countdownText(soonestList[0].datetime);
+                if (nextUpCard) nextUpCard.classList.add('clickable');
             } else {
+                nextUpReminderId = null;
                 nextEl.textContent = '—';
+                if (nextUpCard) nextUpCard.classList.remove('clickable');
             }
 
             // Update active state on stat cards visually
@@ -729,13 +737,24 @@ if (page === 'reminders') {
 
             // Sort filtered data
             displayedReminders.sort((a, b) => {
-                if (currentRemSort === 'soonest') {
-                    return new Date(a.datetime).getTime() - new Date(b.datetime).getTime();
-                } else if (currentRemSort === 'oldest') {
-                    return new Date(b.datetime).getTime() - new Date(a.datetime).getTime();
-                } else if (currentRemSort === 'alpha') {
+                if (currentRemSort === 'alpha') {
                     return a.title.localeCompare(b.title);
                 }
+
+                const timeA = new Date(a.datetime).getTime();
+                const timeB = new Date(b.datetime).getTime();
+                
+                // For Upcoming: 'Soonest' means closest in the future (Ascending: timeA - timeB)
+                // For Overdue/Completed: 'Soonest' means closest in the past / most recent (Descending: timeB - timeA)
+                const isPastList = (activeStatFilter === 'completed' || activeStatFilter === 'overdue');
+
+                if (currentRemSort === 'soonest') {
+                    return isPastList ? timeB - timeA : timeA - timeB;
+                } else if (currentRemSort === 'oldest') {
+                    return isPastList ? timeA - timeB : timeB - timeA;
+                }
+                
+                return 0;
             });
 
             list.innerHTML = '';
@@ -969,6 +988,31 @@ if (page === 'reminders') {
                 activeStatFilter = this.dataset.filter;
                 renderReminders();
             });
+        });
+
+        document.getElementById('nextUpCard')?.addEventListener('click', () => {
+            if (!nextUpReminderId) return;
+
+            // Switch to upcoming filter if not already active to ensure the card is rendered
+            if (activeStatFilter !== 'upcoming') {
+                activeStatFilter = 'upcoming';
+                renderReminders();
+            }
+
+            // Also ensure it is sorted soonest first so it's at the top? Not strictly necessary, but helpful
+            // Wait, the user just said scroll to it.
+
+            // Wait a tick for DOM to render if we just switched filters
+            setTimeout(() => {
+                const targetCard = document.querySelector(`[data-id="${nextUpReminderId}"]`);
+                if (targetCard) {
+                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    targetCard.classList.add('reminder-flash-highlight');
+                    setTimeout(() => {
+                        targetCard.classList.remove('reminder-flash-highlight');
+                    }, 1500);
+                }
+            }, 50);
         });
 
         document.addEventListener('keydown', e => {
@@ -1651,10 +1695,17 @@ if (page === 'habits') {
             const d = new Date(today);
             d.setDate(today.getDate() - (6 - i));
             const dateStr = getLocalYYYYMMDD(d);
-            const pct   = parseInt(localStorage.getItem(`habitHistory_${dateStr}`)) || 0;
+            // Calculate actual percentage from live habitsData utilizing existing robust logic
+            // which respects habit creation dates and scheduled frequencies (daily/weekdays/weekends)
+            const pctFloat = calculatePeriodRate(habitsData, d, d);
+            const pct = Math.round(pctFloat * 100);
+
             const bar   = col.querySelector('.bar');
             const label = col.querySelector('.bar-day');
-            if (bar) { bar.style.height = pct + '%'; bar.className = 'bar ' + (pct === 100 ? 'peak' : pct > 0 ? 'normal' : 'dim'); }
+            if (bar) { 
+                bar.style.height = pct + '%'; 
+                bar.className = 'bar ' + (pct === 100 ? 'peak' : pct > 0 ? 'normal' : 'dim'); 
+            }
             if (label) label.textContent = days[d.getDay()];
         });
 
@@ -3211,6 +3262,7 @@ if (page === 'account') {
     const fullNameInput = document.getElementById('fullName');
     const emailInput    = document.getElementById('email');
     const timezoneInput = document.getElementById('timezone');
+    const currencyInput = document.getElementById('currency');
     const accName       = document.getElementById('accName');
     const accEmail      = document.getElementById('accEmail');
 
@@ -3220,6 +3272,7 @@ if (page === 'account') {
             if (fullNameInput) fullNameInput.value = saved.name     || '';
             if (emailInput)    emailInput.value    = saved.email    || '';
             if (timezoneInput) timezoneInput.value = saved.timezone || '';
+            if (currencyInput) currencyInput.value = saved.currency || 'USD';
             if (accName)       accName.innerText   = saved.name     || 'Your Name';
             if (accEmail)      accEmail.innerText  = saved.email    || 'your@email.com';
         } else {
@@ -3256,6 +3309,7 @@ if (page === 'account') {
             name:     fullNameInput.value.trim(),
             email:    emailInput.value.trim(),
             timezone: timezoneInput.value,
+            currency: currencyInput ? currencyInput.value : 'USD',
         };
         if (!data.name) { showToast('Please enter your full name.', 'error'); return; }
         if (!data.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
@@ -3316,7 +3370,9 @@ if (page === 'account') {
     const walletState = { plans: [], transactions: [] };
 
     function walletFormatMoney(n) {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n || 0);
+        const saved = JSON.parse(localStorage.getItem('accountData')) || {};
+        const userCurrency = saved.currency || 'USD';
+        return new Intl.NumberFormat(undefined, { style: 'currency', currency: userCurrency }).format(n || 0);
     }
 
     function walletFormatDate(dateStr) {

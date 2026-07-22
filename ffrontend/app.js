@@ -386,6 +386,9 @@ function logoutUser() {
         () => {
             localStorage.removeItem('gv_token');
             localStorage.removeItem('gv_user_name');
+            localStorage.removeItem('accountData');
+            localStorage.removeItem('profileImage');
+            localStorage.removeItem('memberSince');
             localStorage.removeItem('hubUser');
             localStorage.removeItem('hubEmail');
             sessionStorage.removeItem('hubUser');
@@ -3331,25 +3334,30 @@ if (page === 'account') {
         ctx.fillText(initials, size / 2, size / 2 + 1);
     }
 
-    window.addEventListener('load', () => {
-        const saved = JSON.parse(localStorage.getItem('accountData'));
+    window.addEventListener('load', async () => {
         let displayName = 'GV'; // fallback initials
-        if (saved) {
-            if (fullNameInput) fullNameInput.value = saved.name     || '';
-            if (emailInput)    emailInput.value    = saved.email    || '';
-            if (timezoneInput) timezoneInput.value = saved.timezone || '';
-            if (currencyInput) currencyInput.value = saved.currency || 'USD';
-            if (accName)       accName.innerText   = saved.name     || 'Your Name';
-            if (accEmail)      accEmail.innerText  = saved.email    || 'your@email.com';
-            if (saved.name)    displayName = saved.name;
-        } else {
-            const hubUser  = localStorage.getItem('hubUser')  || sessionStorage.getItem('hubUser')  || '';
-            const hubEmail = localStorage.getItem('hubEmail') || sessionStorage.getItem('hubEmail') || '';
-            if (accName)       accName.innerText   = hubUser;
-            if (accEmail)      accEmail.innerText  = hubEmail;
-            if (fullNameInput) fullNameInput.value = hubUser;
-            if (emailInput)    emailInput.value    = hubEmail;
-            if (hubUser)       displayName = hubUser;
+        try {
+            const res = await apiFetch('/api/auth/me');
+            if (res && res.data) {
+                const user = res.data;
+                if (fullNameInput) fullNameInput.value = user.name || '';
+                if (emailInput)    emailInput.value    = user.email || '';
+                if (timezoneInput) timezoneInput.value = user.timezone || '';
+                if (currencyInput) currencyInput.value = user.currency || 'USD';
+                if (accName)       accName.innerText   = user.name || 'Your Name';
+                if (accEmail)      accEmail.innerText  = user.email || 'your@email.com';
+                if (user.name)     displayName = user.name;
+                
+                // Keep accountData in sync for other components that might rely on it (like walletFormatMoney)
+                localStorage.setItem('accountData', JSON.stringify({
+                    name: user.name,
+                    email: user.email,
+                    timezone: user.timezone,
+                    currency: user.currency || 'USD'
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to load profile from API:', err);
         }
 
         // Draw initials avatar OR show uploaded photo
@@ -3382,31 +3390,44 @@ if (page === 'account') {
 
     window.cancelEdit = function () { location.reload(); };
 
-    window.saveAccount = function () {
+    window.saveAccount = async function () {
         const data = {
             name:     fullNameInput.value.trim(),
             email:    emailInput.value.trim(),
             timezone: timezoneInput.value,
-            currency: currencyInput ? currencyInput.value : 'GHS',
+            currency: currencyInput ? currencyInput.value : 'USD',
         };
         if (!data.name) { showToast('Please enter your full name.', 'error'); return; }
         if (!data.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
             showToast('Please enter a valid email.', 'error'); return;
         }
-        localStorage.setItem('accountData', JSON.stringify(data));
-        if (accName)  accName.innerText  = data.name;
-        if (accEmail) accEmail.innerText = data.email;
-        // Redraw initials avatar if no custom photo uploaded
-        if (!localStorage.getItem('profileImage')) {
-            drawInitialsAvatar(data.name);
+
+        try {
+            const res = await apiFetch('/api/auth/profile', {
+                method: 'PUT',
+                body: JSON.stringify(data)
+            });
+
+            localStorage.setItem('accountData', JSON.stringify(data));
+            if (accName)  accName.innerText  = data.name;
+            if (accEmail) accEmail.innerText = data.email;
+            
+            // Redraw initials avatar if no custom photo uploaded
+            if (!localStorage.getItem('profileImage')) {
+                drawInitialsAvatar(data.name);
+            }
+            
+            document.querySelectorAll('#accountSection input:not(#memberSince)').forEach(i => i.setAttribute('readonly', true));
+            document.querySelectorAll('#accountSection select').forEach(s => s.setAttribute('disabled', true));
+            document.getElementById('saveBtn').style.display   = 'none';
+            document.getElementById('cancelBtn').style.display = 'none';
+            document.querySelector('.edit-btn').style.display  = 'inline-flex';
+            
+            pushNotification('system', 'Profile updated ✓', 'Your profile has been updated successfully.');
+            showToast('Profile updated successfully! ✓', 'success');
+        } catch (err) {
+            showToast(err.message || 'Failed to update profile', 'error');
         }
-        document.querySelectorAll('#accountSection input:not(#memberSince)').forEach(i => i.setAttribute('readonly', true));
-        document.querySelectorAll('#accountSection select').forEach(s => s.setAttribute('disabled', true));
-        document.getElementById('saveBtn').style.display   = 'none';
-        document.getElementById('cancelBtn').style.display = 'none';
-        document.querySelector('.edit-btn').style.display  = 'inline-flex';
-        pushNotification('system', 'Profile updated ✓', 'Your profile has been updated successfully.');
-        showToast('Profile updated successfully! ✓', 'success');
     };
 
     window.openSettingsPage = function (pageId) {

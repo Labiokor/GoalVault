@@ -598,6 +598,16 @@ async function saveTransaction() {
   if (!category)   { showError(errorBox, 'Category is required'); return }
   if (!walletId)   { showError(errorBox, 'Please select a wallet'); return }
 
+  // Budget prompt check — show alert BEFORE processing any expense/withdraw
+  if (type === 'expense' || type === 'withdraw') {
+    try {
+      const res = await api.finance.checkBudgetPrompt({ category, amount })
+      if (res.data?.prompt) {
+        alert('⚠️ ' + res.data.prompt)
+      }
+    } catch {}
+  }
+
   // Withdrawals MUST include a description and it must match the budget goal.
   if (type === 'withdraw') {
     if (!description) {

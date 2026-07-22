@@ -539,6 +539,8 @@ if (page === 'reminders') {
         let snoozeTargetId = null;
         let currentCat = 'personal';
         let currentFreq = 'once';
+        let currentRemSort = 'soonest';
+        let activeStatFilter = 'upcoming';
 
         const CAT_CONFIG = {
             personal: { icon: '🙂', label: 'Personal', color: '#7c3aed' },
@@ -693,61 +695,83 @@ if (page === 'reminders') {
             const list = document.getElementById('remList');
             if (!list) return;
 
-            // Sort: incomplete ASC, completed DESC
-            const sorted = [...remindersData].sort((a, b) => {
-                if (a.completed !== b.completed) return a.completed ? 1 : -1;
-                const timeA = new Date(a.datetime).getTime();
-                const timeB = new Date(b.datetime).getTime();
-                return a.completed ? timeB - timeA : timeA - timeB;
-            });
-
-            const upcoming = sorted.filter(r => !r.completed);
-            const completed = sorted.filter(r => r.completed);
-
-            list.innerHTML = '';
-
-            // Stats Update
+            // Stats Update (compute based on raw data)
+            const upcoming = remindersData.filter(r => !r.completed);
+            const completed = remindersData.filter(r => r.completed);
             const overdueCount = upcoming.filter(r => new Date(r.datetime) < new Date()).length;
+
             document.getElementById('statUpcoming').textContent = upcoming.length;
             document.getElementById('statOverdue').textContent = overdueCount;
             document.getElementById('statCompleted').textContent = completed.length;
 
-
             const nextEl = document.getElementById('statNext');
-            if (upcoming.length > 0) {
-                const soonest = upcoming[0];
-                nextEl.textContent = countdownText(soonest.datetime);
+            const soonestList = [...upcoming].sort((a,b) => new Date(a.datetime) - new Date(b.datetime));
+            if (soonestList.length > 0) {
+                nextEl.textContent = countdownText(soonestList[0].datetime);
             } else {
                 nextEl.textContent = '—';
             }
 
-            // Upcoming Section
-            const upSec = document.createElement('div');
-            upSec.className = 'rem-section-wrap';
-            upSec.innerHTML = '<h3 class="rem-section-title"><i class="fa-solid fa-clock"></i> Upcoming</h3>';
-            const upList = document.createElement('div');
-            upList.className = 'rem-sub-list';
-            if (upcoming.length === 0) {
-                upList.innerHTML = '<div class="rem-empty-sub">No upcoming reminders</div>';
-            } else {
-                upcoming.forEach(r => upList.appendChild(buildReminderItem(r)));
-            }
-            upSec.appendChild(upList);
-            list.appendChild(upSec);
+            // Update active state on stat cards visually
+            document.querySelectorAll('.filter-stat').forEach(el => {
+                el.classList.toggle('active-filter', el.dataset.filter === activeStatFilter);
+            });
 
-            // Completed Section
-            const compSec = document.createElement('div');
-            compSec.className = 'rem-section-wrap';
-            compSec.innerHTML = '<h3 class="rem-section-title"><i class="fa-solid fa-circle-check"></i> Completed</h3>';
-            const compList = document.createElement('div');
-            compList.className = 'rem-sub-list';
-            if (completed.length === 0) {
-                compList.innerHTML = '<div class="rem-empty-sub">No completed reminders yet</div>';
-            } else {
-                completed.forEach(r => compList.appendChild(buildReminderItem(r)));
+            // Filter data for list view
+            let displayedReminders = [];
+            if (activeStatFilter === 'upcoming') {
+                displayedReminders = upcoming;
+            } else if (activeStatFilter === 'overdue') {
+                displayedReminders = upcoming.filter(r => new Date(r.datetime) < new Date());
+            } else if (activeStatFilter === 'completed') {
+                displayedReminders = completed;
             }
-            compSec.appendChild(compList);
-            list.appendChild(compSec);
+
+            // Sort filtered data
+            displayedReminders.sort((a, b) => {
+                if (currentRemSort === 'soonest') {
+                    return new Date(a.datetime).getTime() - new Date(b.datetime).getTime();
+                } else if (currentRemSort === 'oldest') {
+                    return new Date(b.datetime).getTime() - new Date(a.datetime).getTime();
+                } else if (currentRemSort === 'alpha') {
+                    return a.title.localeCompare(b.title);
+                }
+            });
+
+            list.innerHTML = '';
+
+            // Render single section
+            const sec = document.createElement('div');
+            sec.className = 'rem-section-wrap';
+            sec.innerHTML = `
+                <div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 16px;">
+                    <div class="rem-sort-wrap" style="margin: 0;">
+                        <label class="rem-sort-label">Sort:</label>
+                        <select class="rem-sort-select" id="remSortSelect">
+                            <option value="soonest" ${currentRemSort === 'soonest' ? 'selected' : ''}>Soonest First</option>
+                            <option value="oldest" ${currentRemSort === 'oldest' ? 'selected' : ''}>Oldest First</option>
+                            <option value="alpha" ${currentRemSort === 'alpha' ? 'selected' : ''}>A &rarr; Z</option>
+                        </select>
+                    </div>
+                </div>
+            `;
+            const subList = document.createElement('div');
+            subList.className = 'rem-sub-list';
+            if (displayedReminders.length === 0) {
+                subList.innerHTML = `<div class="rem-empty-sub">No reminders found for this filter</div>`;
+            } else {
+                displayedReminders.forEach(r => subList.appendChild(buildReminderItem(r)));
+            }
+            sec.appendChild(subList);
+            list.appendChild(sec);
+
+            const sortSelect = document.getElementById('remSortSelect');
+            if (sortSelect) {
+                sortSelect.addEventListener('change', (e) => {
+                    currentRemSort = e.target.value;
+                    renderReminders();
+                });
+            }
         }
 
         async function saveReminder() {
@@ -937,6 +961,13 @@ if (page === 'reminders') {
                     if (id === 'reminderModalOverlay') resetModal();
                     if (id === 'snoozeModalOverlay') snoozeTargetId = null;
                 }
+            });
+        });
+
+        document.querySelectorAll('.filter-stat').forEach(btn => {
+            btn.addEventListener('click', function() {
+                activeStatFilter = this.dataset.filter;
+                renderReminders();
             });
         });
 

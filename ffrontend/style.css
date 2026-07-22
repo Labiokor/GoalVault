@@ -4445,9 +4445,30 @@ body.dark .notif-filter-btn.active { background: var(--nav-bg); }
     flex: 1;
     display: flex;
     align-items: center;
+    gap: 14px;
     justify-content: center;
-    gap: 12px;
     padding: 0 16px;
+}
+.rem-stat.filter-stat {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+    border-radius: var(--radius-md);
+}
+.rem-stat.filter-stat:hover {
+    background: rgba(124,58,237,0.04);
+}
+.rem-stat.filter-stat.active-filter {
+    background: rgba(124,58,237,0.12);
+    border-color: transparent;
+    transform: translateY(-2px);
+}
+body.dark .rem-stat.filter-stat:hover {
+    background: rgba(124,58,237,0.1);
+}
+body.dark .rem-stat.filter-stat.active-filter {
+    background: rgba(124,58,237,0.20);
+    border-color: transparent;
 }
 .rem-stat-icon {
     width: 40px;

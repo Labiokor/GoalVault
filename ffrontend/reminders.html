@@ -74,7 +74,7 @@
 
         <!-- Stats Bar -->
         <div class="rem-stats-bar">
-            <div class="rem-stat">
+            <div class="rem-stat filter-stat active-filter" data-filter="upcoming">
                 <div class="rem-stat-icon upcoming">
                     <i class="fa-solid fa-clock"></i>
                 </div>
@@ -84,7 +84,7 @@
                 </div>
             </div>
             <div class="rem-stat-divider"></div>
-            <div class="rem-stat">
+            <div class="rem-stat filter-stat" data-filter="overdue">
                 <div class="rem-stat-icon overdue">
                     <i class="fa-solid fa-triangle-exclamation"></i>
                 </div>
@@ -94,7 +94,7 @@
                 </div>
             </div>
             <div class="rem-stat-divider"></div>
-            <div class="rem-stat">
+            <div class="rem-stat filter-stat" data-filter="completed">
                 <div class="rem-stat-icon completed">
                     <i class="fa-solid fa-circle-check"></i>
                 </div>
@@ -115,18 +115,7 @@
             </div>
         </div>
 
-        <!-- Tabs + Sort -->
-        <div class="rem-controls">
 
-            <div class="rem-sort-wrap">
-                <label class="rem-sort-label">Sort:</label>
-                <select class="rem-sort-select" id="remSortSelect">
-                    <option value="soonest">Soonest First</option>
-                    <option value="oldest">Oldest First</option>
-                    <option value="alpha">A → Z</option>
-                </select>
-            </div>
-        </div>
 
         <!-- Reminder List -->
         <div class="rem-list" id="remList"></div>

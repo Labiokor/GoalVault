@@ -225,6 +225,25 @@ exports.addTransaction = async (req, res) => {
           await plan.save({ session })
         }
       }
+      if (type === 'deposit' || type === 'withdraw') {
+        const Notification = require('../models/Notification')
+        const isDep = type === 'deposit'
+        const title = isDep ? 'Deposit received' : 'Withdrawal made'
+        const msgAmount = amount.toFixed(2)
+        const actionStr = isDep ? 'deposited' : 'withdrawn'
+        const message = `$${msgAmount} ${actionStr} — ${description || category}`
+        
+        await Notification.create([{
+          user: req.user.id,
+          title,
+          message,
+          type: 'finance',
+          reference: {
+            model: 'Transaction',
+            documentId: transaction._id
+          }
+        }], { session })
+      }
     })
 
     success(res, transaction, 'Transaction added', 201)

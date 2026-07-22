@@ -66,6 +66,7 @@ const NOTIF_TYPES = {
     system:   { icon: '⚙️', label: 'System'   },
     delete:   { icon: '🗑️', label: 'Deleted'  },
     goal:     { icon: '🎯', label: 'Goal'     },
+    finance:  { icon: '💰', label: 'Finance'  },
 };
 
 function getRelativeTime(dateString) {
@@ -3589,6 +3590,21 @@ if (page === 'account') {
                 e.target.reset();
                 closeWalletModal('walletTxModal');
                 await Promise.all([loadWalletSummary(), loadWalletPlans(), loadWalletTransactions()]);
+                
+                // Trigger real-time notifications for deposits and withdrawals
+                if (payload.type === 'deposit' || payload.type === 'withdraw') {
+                    const isDep = payload.type === 'deposit';
+                    const title = isDep ? 'Deposit received' : 'Withdrawal made';
+                    const msgAmount = payload.amount.toFixed(2);
+                    const actionStr = isDep ? 'deposited' : 'withdrawn';
+                    const message = `$${msgAmount} ${actionStr} — ${payload.description || payload.category}`;
+                    
+                    pushNotification('finance', title, message);
+                    if (Notification.permission === 'granted') {
+                        try { new Notification(title, { body: message }); } catch (e) { console.error('Browser notification error', e); }
+                    }
+                    if (typeof updateNotifBadge === 'function') updateNotifBadge();
+                }
             } catch (err) {
                 console.error('Could not save transaction', err);
                 alert('Could not save the transaction. Please try again.');

@@ -16,7 +16,7 @@ const NotificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['task', 'habit', 'goal', 'reminder', 'general'],
+    enum: ['task', 'habit', 'goal', 'reminder', 'general', 'finance'],
     default: 'general'
   },
   read: {
@@ -27,7 +27,7 @@ const NotificationSchema = new mongoose.Schema({
   reference: {
     model: {
       type: String,
-      enum: ['Task', 'Habit', 'Goal', 'Reminder'],
+      enum: ['Task', 'Habit', 'Goal', 'Reminder', 'Transaction'],
       default: null
     },
     documentId: {

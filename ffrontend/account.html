@@ -174,9 +174,13 @@
 
                 <div class="account-header">
                     <div class="avatar-wrapper">
+                        <!-- Canvas renders initials avatar; replaced by real photo if uploaded -->
+                        <canvas id="profileAvatarCanvas" width="100" height="100"
+                                style="border-radius:50%; display:block;"></canvas>
                         <img id="profileImage"
-                             src="https://i.pravatar.cc/100"
-                             alt="Profile photo">
+                             src=""
+                             alt="Profile photo"
+                             style="display:none; border-radius:50%; width:100px; height:100px; object-fit:cover; position:absolute; inset:0;">
                         <input type="file"
                                id="imageUpload"
                                accept="image/*"

@@ -3403,9 +3403,30 @@ if (page === 'account') {
             // Using getSummary endpoint which returns { wallets: [...] }
             const summaryRes = await walletFetchJSON(`${WALLET_API_BASE}/summary`);
             const summary = summaryRes.data || summaryRes;
-            const balance = summary.wallets && summary.wallets.length > 0 ? summary.wallets[0].balance : 0;
             
-            document.getElementById('balanceAmount').textContent = walletFormatMoney(balance);
+            const balRes = await walletFetchJSON(`${WALLET_API_BASE}/balance-summary`);
+            const balData = balRes.data || balRes;
+            
+            document.getElementById('balanceAmount').textContent = walletFormatMoney(balData.balance);
+            
+            // Reconcile warning
+            try {
+                const recRes = await walletFetchJSON(`${WALLET_API_BASE}/reconcile`);
+                const recData = recRes.data || recRes;
+                const warnEl = document.getElementById('reconcileWarning');
+                if (warnEl) {
+                    warnEl.style.display = recData.deficit > 0 ? 'block' : 'none';
+                }
+            } catch(e) {}
+            
+            const breakdownAvailable = document.getElementById('breakdownAvailable');
+            if (breakdownAvailable) {
+                document.getElementById('breakdownBalance').textContent = walletFormatMoney(balData.balance);
+                document.getElementById('breakdownReserved').textContent = '-' + walletFormatMoney(balData.reserved);
+                breakdownAvailable.textContent = walletFormatMoney(balData.available);
+                walletState.available = balData.available;
+            }
+
             const label = document.getElementById('monthChangeLabel');
             if (label) {
                 const change = summary.monthChange || 0;
@@ -3472,7 +3493,10 @@ if (page === 'account') {
                     <div class="wallet-progress-track">
                         <div class="wallet-progress-fill" style="width:${pct}%;"></div>
                     </div>
-                    <p class="wallet-plan-meta">${walletFormatMoney(plan.saved)} of ${walletFormatMoney(plan.target)} · ${walletEscape(plan.reason)}</p>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <p class="wallet-plan-meta">${walletFormatMoney(plan.saved)} of ${walletFormatMoney(plan.target)} · ${walletEscape(plan.reason)}</p>
+                        ${plan.saved > 0 ? `<button class="btn wallet-btn-secondary" style="padding:4px 8px; font-size:0.7rem; border-radius:4px;" onclick="openReleaseModal('${plan.id}', ${plan.saved})"><i class="fa-solid fa-unlock"></i> Release</button>` : ''}
+                    </div>
                 </div>`;
         }).join('');
     }
@@ -3535,6 +3559,10 @@ if (page === 'account') {
             document.getElementById('walletTxSubmit').textContent = 'Add deposit';
             document.getElementById('walletTxSubmit').disabled = false;
             document.getElementById('walletTxDate').valueAsDate = new Date();
+            const breakdown = document.getElementById('walletWithdrawBreakdown');
+            if(breakdown) breakdown.style.display = 'none';
+            const amountInput = document.getElementById('walletTxAmount');
+            if(amountInput) amountInput.removeAttribute('max');
             openWalletModal('walletTxModal');
         });
     }
@@ -3547,9 +3575,52 @@ if (page === 'account') {
             document.getElementById('walletTxSubmit').textContent = 'Withdraw';
             document.getElementById('walletTxSubmit').disabled = false;
             document.getElementById('walletTxDate').valueAsDate = new Date();
+            
+            const breakdown = document.getElementById('walletWithdrawBreakdown');
+            if(breakdown) breakdown.style.display = 'block';
+            
+            const planSelect = document.getElementById('walletTxPlan');
+            if(planSelect) planSelect.value = '';
+            
+            const planLimit = document.getElementById('breakdownPlanLimit');
+            if(planLimit) planLimit.style.display = 'none';
+            
+            const amountInput = document.getElementById('walletTxAmount');
+            if(amountInput) amountInput.max = walletState.available || 0;
+            
             openWalletModal('walletTxModal');
         });
     }
+
+    const walletTxPlan = document.getElementById('walletTxPlan');
+    if (walletTxPlan) {
+        walletTxPlan.addEventListener('change', (e) => {
+            const planId = e.target.value;
+            const isWithdraw = document.getElementById('walletTxType').value === 'withdraw';
+            if (isWithdraw) {
+                if (planId) {
+                    const plan = walletState.plans.find(p => p.id === planId);
+                    if (plan) {
+                        document.getElementById('breakdownPlanLimit').style.display = 'block';
+                        document.getElementById('breakdownPlanAmt').textContent = walletFormatMoney(plan.saved);
+                        document.getElementById('walletTxAmount').max = plan.saved;
+                    }
+                } else {
+                    document.getElementById('breakdownPlanLimit').style.display = 'none';
+                    document.getElementById('walletTxAmount').max = walletState.available || 0;
+                }
+            }
+        });
+    }
+
+    window.openReleaseModal = function(planId, maxAmount) {
+        document.getElementById('walletReleasePlanId').value = planId;
+        document.getElementById('walletReleaseMax').textContent = walletFormatMoney(maxAmount);
+        const amountInput = document.getElementById('walletReleaseAmount');
+        amountInput.value = '';
+        amountInput.max = maxAmount;
+        openWalletModal('walletReleaseModal');
+    };
 
     const newPlanBtn = document.getElementById('openNewPlan');
     if (newPlanBtn) {
@@ -3568,28 +3639,70 @@ if (page === 'account') {
     if (txForm) {
         txForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            
+
             const submitBtn = document.getElementById('walletTxSubmit');
             const originalText = submitBtn.textContent;
+
+            // Snapshot form values NOW before any async work
+            const txType    = document.getElementById('walletTxType').value;
+            const txAmount  = parseFloat(document.getElementById('walletTxAmount').value);
+            const txReason  = document.getElementById('walletTxReason').value.trim();
+            const txCat     = document.getElementById('walletTxCategory').value;
+            const txDate    = document.getElementById('walletTxDate').value;
+            const txPlanId  = document.getElementById('walletTxPlan').value || null;
+
+            // ── Plan-withdrawal confirmation ─────────────────────────
+            if (txType === 'withdraw' && txPlanId) {
+                const plan = walletState.plans.find(p => p.id === txPlanId);
+                if (plan) {
+                    const savedAfter  = Math.max(0, plan.saved - txAmount);
+                    const pctBefore   = plan.target > 0 ? Math.min(100, Math.round((plan.saved  / plan.target) * 100)) : 0;
+                    const pctAfter    = plan.target > 0 ? Math.min(100, Math.round((savedAfter / plan.target) * 100)) : 0;
+                    const setback     = pctBefore - pctAfter;
+
+                    const confirmed = await new Promise(resolve => {
+                        confirmDelete(
+                            `Withdrawing ${walletFormatMoney(txAmount)} from "${plan.name}" will reduce your progress from ${pctBefore}% to ${pctAfter}% — a ${setback}% setback toward your ${walletFormatMoney(plan.target)} goal. Are you sure you want to proceed?`,
+                            () => resolve(true),
+                            {
+                                icon: '⚠️',
+                                title: 'Withdraw from Plan?',
+                                confirmLabel: 'Yes, Withdraw',
+                                btnColor: '#f59e0b'
+                            }
+                        );
+                        // confirmDelete calls onConfirm on yes; we need to catch cancel too
+                        // Override: wrap it so cancel resolves false
+                        const modal     = document.getElementById('confirmModal');
+                        const cancelBtn = document.getElementById('confirmCancel');
+                        const origCancel = cancelBtn.onclick;
+                        cancelBtn.addEventListener('click', () => resolve(false), { once: true });
+                        modal.querySelector('.confirm-backdrop')?.addEventListener('click', () => resolve(false), { once: true });
+                    });
+
+                    if (!confirmed) return; // User cancelled — do nothing
+                }
+            }
+
             submitBtn.disabled = true;
             submitBtn.textContent = 'Processing...';
-            
-            
-            // Need wallet ID for backend request
-            const walletsRes = await walletFetchJSON(`${WALLET_API_BASE}/wallets`);
-            const wallets = walletsRes.data || [];
-            const currentWallet = wallets.find(w => w.isDefault) || wallets[0];
-            
-            const payload = {
-                type: document.getElementById('walletTxType').value,
-                amount: parseFloat(document.getElementById('walletTxAmount').value),
-                description: document.getElementById('walletTxReason').value.trim(),
-                category: document.getElementById('walletTxCategory').value,
-                date: document.getElementById('walletTxDate').value,
-                linkedPlan: document.getElementById('walletTxPlan').value || null,
-                walletId: currentWallet ? currentWallet._id : null
-            };
+
             try {
+                // Need wallet ID for backend request
+                const walletsRes = await walletFetchJSON(`${WALLET_API_BASE}/wallets`);
+                const wallets = walletsRes.data || [];
+                const currentWallet = wallets.find(w => w.isDefault) || wallets[0];
+
+                const payload = {
+                    type: txType,
+                    amount: txAmount,
+                    description: txReason,
+                    category: txCat,
+                    date: txDate,
+                    linkedPlan: txPlanId,
+                    walletId: currentWallet ? currentWallet._id : null
+                };
+
                 await walletFetchJSON(`${WALLET_API_BASE}/transactions`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3600,24 +3713,24 @@ if (page === 'account') {
                 submitBtn.textContent = originalText;
                 closeWalletModal('walletTxModal');
                 await Promise.all([loadWalletSummary(), loadWalletPlans(), loadWalletTransactions()]);
-                
+
                 // Trigger real-time notifications for deposits and withdrawals
                 if (payload.type === 'deposit' || payload.type === 'withdraw') {
                     const isDep = payload.type === 'deposit';
                     const title = isDep ? 'Deposit received' : 'Withdrawal made';
                     const msgAmount = payload.amount.toFixed(2);
                     const actionStr = isDep ? 'deposited' : 'withdrawn';
-                    const message = `$${msgAmount} ${actionStr} — ${payload.description || payload.category}`;
-                    
+                    const message = `${walletFormatMoney(payload.amount)} ${actionStr}${payload.linkedPlan ? ' from plan' : ''} — ${payload.description || payload.category}`;
+
                     pushNotification('finance', title, message);
                     if (Notification.permission === 'granted') {
-                        try { new Notification(title, { body: message }); } catch (e) { console.error('Browser notification error', e); }
+                        try { new Notification(title, { body: message }); } catch (err2) { /* silent */ }
                     }
                     if (typeof updateNotifBadge === 'function') updateNotifBadge();
                 }
             } catch (err) {
                 console.error('Could not save transaction', err);
-                alert('Could not save the transaction. Please try again.');
+                showToast(err.message || 'Could not save the transaction. Please try again.', 'error');
                 submitBtn.disabled = false;
                 submitBtn.textContent = originalText;
             }
@@ -3647,6 +3760,29 @@ if (page === 'account') {
             } catch (err) {
                 console.error('Could not save plan', err);
                 alert('Could not save the plan. Please try again.');
+            }
+        });
+    }
+
+    const releaseForm = document.getElementById('walletReleaseForm');
+    if (releaseForm) {
+        releaseForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const planId = document.getElementById('walletReleasePlanId').value;
+            const amount = parseFloat(document.getElementById('walletReleaseAmount').value);
+            try {
+                await walletFetchJSON(`${WALLET_API_BASE}/budgets/${planId}/unreserve`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount }),
+                });
+                e.target.reset();
+                closeWalletModal('walletReleaseModal');
+                await Promise.all([loadWalletSummary(), loadWalletPlans()]);
+                if (typeof showToast === 'function') showToast('Funds released successfully! ✓', 'success');
+            } catch (err) {
+                console.error('Could not release funds', err);
+                alert('Could not release funds. Please try again.');
             }
         });
     }

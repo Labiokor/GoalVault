@@ -1,6 +1,8 @@
 const Goal = require('../models/Goal')
 const { createNotification } = require('./notificationController')
 const { success, error } = require('../Utils/responseHandler')
+const { sendNotificationEmail } = require('../Utils/emailService')
+const User = require('../models/User')
 
 exports.createGoal = async (req, res) => {
   try {
@@ -79,6 +81,17 @@ exports.updateGoalProgress = async (req, res) => {
         'goal',
         { model: 'Goal', documentId: goal._id }
       )
+      // Send email for high-signal event (fires on user action, no cron)
+      try {
+        const user = await User.findById(req.user.id).select('email name')
+        if (user) {
+          sendNotificationEmail(user.email, user.name, {
+            type: 'goal',
+            title: '🎉 Goal Completed!',
+            message: `You've completed your goal "${goal.title}". Keep up the momentum and set your next target!`
+          })
+        }
+      } catch (emailErr) { /* non-blocking */ }
     }
 
     success(res, goal, 'Goal progress updated')

@@ -285,6 +285,11 @@
              class="settings-subpage"
              style="display:none;">
 
+            <div id="reconcileWarning" style="display:none; background:#fffbeb; color:#92400e; padding:12px 16px; border-radius:8px; border:1px solid #fcd34d; font-size:0.85rem; margin-bottom:16px; font-family:'Inter',sans-serif;">
+                <i class="fa-solid fa-triangle-exclamation" style="margin-right:6px;"></i>
+                <strong>Warning:</strong> Your plans claim to hold more money than is available in your wallet. Use "Release funds" on some plans to fix this mismatch.
+            </div>
+
             <button class="settings-back-btn"
                     onclick="closeSettingsPage('walletPageInner')">
                 <i class="fa-solid fa-arrow-left"></i> Back
@@ -424,6 +429,14 @@
             <label class="wallet-field-label">Amount</label>
             <input class="wallet-input" type="number" id="walletTxAmount" placeholder="0.00" step="0.01" min="0.01" required />
 
+            <div id="walletWithdrawBreakdown" style="display:none; font-family:'JetBrains Mono',monospace; font-size:0.75rem; background:var(--surface-2); padding:12px; border-radius:8px; margin-bottom:16px; color:var(--text-muted); border:1px solid var(--border);">
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Total balance:</span> <span id="breakdownBalance"></span></div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:6px;"><span>Reserved:</span> <span id="breakdownReserved"></span></div>
+                <div style="border-top:1px dashed var(--border); margin:8px 0;"></div>
+                <div style="display:flex; justify-content:space-between; color:var(--text-primary); font-weight:600;"><span>Available:</span> <span id="breakdownAvailable"></span></div>
+                <div id="breakdownPlanLimit" style="display:none; color:var(--accent-primary); margin-top:8px; font-weight:600;"><i class="fa-solid fa-bullseye"></i> Plan reserved: <span id="breakdownPlanAmt"></span></div>
+            </div>
+
             <label class="wallet-field-label">Reason</label>
             <input class="wallet-input" type="text" id="walletTxReason" placeholder="e.g. Freelance payment" required />
  <label class="wallet-field-label">Category</label>
@@ -491,6 +504,33 @@
                     background:linear-gradient(135deg,#4f8ef7,#6c63ff);
                     border-radius:99px;
                 ">Create plan</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Release funds modal -->
+<div class="wallet-modal-overlay" id="walletReleaseModal" hidden>
+    <div class="wallet-modal">
+        <div class="wallet-modal-head">
+            <h3>Release Funds</h3>
+            <button class="wallet-icon-btn" data-close="walletReleaseModal"><i class="fa-solid fa-xmark"></i></button>
+        </div>
+        <form id="walletReleaseForm">
+            <input type="hidden" id="walletReleasePlanId" />
+            <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:16px; font-family:'Inter',sans-serif;">
+                Unreserve funds from this plan to make them available in your wallet again.
+            </p>
+            <label class="wallet-field-label">Amount to release (Max: <span id="walletReleaseMax">0</span>)</label>
+            <input class="wallet-input" type="number" id="walletReleaseAmount" placeholder="0.00" step="0.01" min="0.01" required />
+
+            <div style="display:flex; gap:8px; margin-top:8px;">
+                <button type="button" class="btn wallet-btn-secondary" style="flex:1;" data-close="walletReleaseModal">Cancel</button>
+                <button type="submit" class="btn" style="
+                    flex:1;
+                    background:linear-gradient(135deg,#f59e0b,#d97706);
+                    border-radius:99px;
+                "><i class="fa-solid fa-unlock" style="margin-right:6px;"></i>Release</button>
             </div>
         </form>
     </div>

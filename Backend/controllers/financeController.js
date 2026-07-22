@@ -3,6 +3,8 @@ const Budget = require('../models/Budget')
 const Wallet = require('../models/Wallet')
 const mongoose = require('mongoose')
 const { success, error } = require('../Utils/responseHandler')
+const { sendNotificationEmail } = require('../Utils/emailService')
+const User = require('../models/User')
 
 // ─── WALLET CONTROLLERS ────────────────────────────────────────────
 
@@ -104,6 +106,31 @@ exports.addTransaction = async (req, res) => {
       if (!wallet) fail('Wallet not found', 404)
 
       const balanceBefore = wallet.balance
+
+      const reservedAgg = await Budget.aggregate([
+        { $match: { user: new mongoose.Types.ObjectId(req.user.id), type: 'plan' } },
+        { $group: { _id: null, total: { $sum: '$savedAmount' } } }
+      ])
+      const totalReserved = reservedAgg[0]?.total || 0
+      const available = wallet.balance - totalReserved
+
+      let isLinkedToValidPlan = false
+      let planForTx = null
+      if (linkedPlan) {
+        planForTx = await Budget.findOne({ _id: linkedPlan, user: req.user.id }).session(session)
+        if (planForTx) {
+          isLinkedToValidPlan = true
+          if ((type === 'expense' || type === 'withdraw') && (planForTx.savedAmount || 0) < amount) {
+            fail(`Plan only has ${(planForTx.savedAmount || 0).toFixed(2)} reserved. Cannot withdraw more than that from this plan.`, 400)
+          }
+        }
+      }
+
+      if ((type === 'expense' || type === 'withdraw') && !isLinkedToValidPlan) {
+        if (available < amount) {
+          fail(`Insufficient available balance. Available: ${available.toFixed(2)}, Reserved: ${totalReserved.toFixed(2)}`, 400)
+        }
+      }
 
       if (type === 'expense' || type === 'withdraw') {
         if (wallet.balance < amount) {
@@ -208,21 +235,45 @@ exports.addTransaction = async (req, res) => {
       // INTENTIONAL: If linkedPlan ID does not resolve to a real plan, the transaction is still allowed
       // through; only the plan update is skipped. This avoids rejecting user actions due to data inconsistency.
       // The wallet balance change is atomic and always succeeds (or rolls back entirely on other errors).
-      if (linkedPlan) {
-        const plan = await Budget.findOne({ _id: linkedPlan, user: req.user.id }).session(session)
+      if (isLinkedToValidPlan && planForTx) {
+        const plan = planForTx
         if (plan) {
           if (type === 'deposit') {
             plan.savedAmount = (plan.savedAmount || 0) + amount
           } else if (type === 'expense' || type === 'withdraw') {
-            // INTENTIONAL: Withdrawals linked to a plan decrease that plan's savedAmount.
-            // This models "spending from a goal" which reduces the progress toward that goal.
             plan.savedAmount = Math.max(0, (plan.savedAmount || 0) - amount)
           }
           if (plan.targetAmount && plan.targetAmount > 0) {
             plan.progress = Math.min(100, Math.round((plan.savedAmount / plan.targetAmount) * 100))
+            const justCompleted = plan.progress === 100 && !(planForTx.progress === 100)
             if (plan.progress === 100) plan.status = 'completed'
+            await plan.save({ session })
+
+            // Plan completion notification + email
+            if (justCompleted) {
+              const Notification = require('../models/Notification')
+              await Notification.create([{
+                user: req.user.id,
+                title: '🎉 Savings Plan Complete!',
+                message: `You've fully funded your "${plan.category}" plan — ${plan.targetAmount.toFixed(2)} saved! Time to spend it or keep it reserved.`,
+                type: 'finance',
+                reference: { model: 'Transaction', documentId: transaction._id }
+              }], { session })
+              // Non-blocking email
+              try {
+                const user = await User.findById(req.user.id).select('email name').session(session)
+                if (user) {
+                  sendNotificationEmail(user.email, user.name, {
+                    type: 'finance',
+                    title: '🎉 Savings Plan Complete!',
+                    message: `Congratulations! You've fully funded your "${plan.category}" savings plan of ${plan.targetAmount.toFixed(2)}. You can now withdraw these funds when you're ready.`
+                  })
+                }
+              } catch (emailErr) { /* non-blocking */ }
+            }
+          } else {
+            await plan.save({ session })
           }
-          await plan.save({ session })
         }
       }
       if (type === 'deposit' || type === 'withdraw') {
@@ -231,8 +282,8 @@ exports.addTransaction = async (req, res) => {
         const title = isDep ? 'Deposit received' : 'Withdrawal made'
         const msgAmount = amount.toFixed(2)
         const actionStr = isDep ? 'deposited' : 'withdrawn'
-        const message = `$${msgAmount} ${actionStr} — ${description || category}`
-        
+        const message = `${msgAmount} ${actionStr} — ${description || category}`
+
         await Notification.create([{
           user: req.user.id,
           title,
@@ -243,6 +294,20 @@ exports.addTransaction = async (req, res) => {
             documentId: transaction._id
           }
         }], { session })
+
+        // Large-withdrawal email alert (>50% of wallet balance before tx)
+        if (type === 'withdraw' && balanceBefore > 0 && (amount / balanceBefore) >= 0.5) {
+          try {
+            const user = await User.findById(req.user.id).select('email name').session(session)
+            if (user) {
+              sendNotificationEmail(user.email, user.name, {
+                type: 'finance',
+                title: '⚠️ Large Withdrawal Alert',
+                message: `A withdrawal of ${msgAmount} was just made from your GoalVault wallet — that's ${Math.round((amount / balanceBefore) * 100)}% of your balance at the time. If this wasn't you, please review your account.`
+              })
+            }
+          } catch (emailErr) { /* non-blocking */ }
+        }
       }
     })
 
@@ -356,6 +421,13 @@ exports.createBudget = async (req, res) => {
     if (type === 'plan') {
       if (!targetAmount || targetAmount <= 0) return error(res, 'targetAmount is required for plans', 400)
       const plan = await Budget.create({ user: req.user.id, category, type: 'plan', targetAmount, savedAmount: 0, deadline, reason })
+      const Notification = require('../models/Notification')
+      await Notification.create({
+        user: req.user.id,
+        title: '🎯 New Savings Plan Created',
+        message: `"${category}" plan started — target: ${Number(targetAmount).toFixed(2)}${deadline ? `, due ${new Date(deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}` : ''}.`,
+        type: 'finance'
+      })
       return success(res, plan, 'Plan created', 201)
     }
 
@@ -395,6 +467,16 @@ exports.deleteBudget = async (req, res) => {
   try {
     const budget = await Budget.findOneAndDelete({ _id: req.params.id, user: req.user.id })
     if (!budget) return error(res, 'Budget not found', 404)
+
+    if (budget.type === 'plan' && budget.savedAmount > 0) {
+      const Notification = require('../models/Notification')
+      await Notification.create({
+        user: req.user.id,
+        title: 'Plan funds released',
+        message: `${budget.category} plan deleted — ${budget.savedAmount.toFixed(2)} returned to available balance`,
+        type: 'finance'
+      })
+    }
 
     success(res, null, 'Budget deleted')
   } catch (err) {
@@ -466,3 +548,112 @@ exports.checkBudgetPrompt = async (req, res) => {
     res.status(500).json({ status: false, message: err.message })
   }
 }
+
+// ─── RESERVED BALANCE & PLAN MANAGEMENT ────────────────────────────
+
+exports.unreservePlan = async (req, res) => {
+  const session = await mongoose.startSession()
+  try {
+    await session.withTransaction(async () => {
+      const { amount } = req.body
+      if (!amount || amount <= 0) {
+        const err = new Error('amount must be > 0')
+        err.status = 400
+        throw err
+      }
+
+      const plan = await Budget.findOne({ _id: req.params.id, user: req.user.id }).session(session)
+      if (!plan) {
+        const err = new Error('Plan not found')
+        err.status = 404
+        throw err
+      }
+      if (amount > (plan.savedAmount || 0)) {
+        const err = new Error(`Cannot unreserve more than saved (${plan.savedAmount || 0})`)
+        err.status = 400
+        throw err
+      }
+
+      plan.savedAmount -= amount
+      if (plan.targetAmount && plan.targetAmount > 0) {
+        plan.progress = Math.min(100, Math.round((plan.savedAmount / plan.targetAmount) * 100))
+      }
+      await plan.save({ session })
+
+      // Notification for unreserve action
+      const Notification = require('../models/Notification')
+      await Notification.create([{
+        user: req.user.id,
+        title: '🔓 Funds Released from Plan',
+        message: `${Number(amount).toFixed(2)} unreserved from "${plan.category}" plan — now available in your wallet.`,
+        type: 'finance'
+      }], { session })
+    })
+    success(res, null, 'Funds unreserved successfully')
+  } catch (err) {
+    if (err.status) return error(res, err.message, err.status)
+    error(res, err.message, 500)
+  } finally {
+    session.endSession()
+  }
+}
+
+exports.getBalanceSummary = async (req, res) => {
+  try {
+    const wallets = await Wallet.find({ user: req.user.id }).sort({ isDefault: -1 })
+    const balance = wallets.length > 0 ? wallets[0].balance : 0
+    
+    const reservedAgg = await Budget.aggregate([
+      { $match: { user: new mongoose.Types.ObjectId(req.user.id), type: 'plan' } },
+      { $group: { _id: null, total: { $sum: '$savedAmount' } } }
+    ])
+    const totalReserved = reservedAgg[0]?.total || 0
+    const available = Math.max(0, balance - totalReserved)
+
+    success(res, { balance, reserved: totalReserved, available })
+  } catch (err) {
+    error(res, err.message, 500)
+  }
+}
+
+exports.reconcile = async (req, res) => {
+  try {
+    const wallets = await Wallet.find({ user: req.user.id }).sort({ isDefault: -1 })
+    const walletBalance = wallets.length > 0 ? wallets[0].balance : 0
+
+    const plans = await Budget.find({ user: req.user.id, type: 'plan' })
+    let totalReserved = 0
+    const brokenPlans = []
+
+    plans.forEach(p => {
+      const saved = p.savedAmount || 0
+      totalReserved += saved
+    })
+
+    const deficit = Math.max(0, totalReserved - walletBalance)
+    
+    if (deficit > 0) {
+      plans.forEach(p => {
+        const saved = p.savedAmount || 0
+        if (saved > walletBalance) {
+          brokenPlans.push({
+            id: p._id,
+            name: p.category,
+            savedAmount: saved,
+            backableAmount: walletBalance,
+            excess: saved - walletBalance
+          })
+        }
+      })
+    }
+
+    success(res, {
+      walletBalance,
+      totalReserved,
+      deficit,
+      brokenPlans
+    })
+  } catch (err) {
+    error(res, err.message, 500)
+  }
+}

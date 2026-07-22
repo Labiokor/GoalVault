@@ -34,6 +34,17 @@ exports.createWallet = async (req, res) => {
 exports.getWallets = async (req, res) => {
   try {
     const wallets = await Wallet.find({ user: req.user.id }).sort({ isDefault: -1 })
+    if (wallets.length === 0) {
+      const newWallet = await Wallet.create({
+        user: req.user.id,
+        name: 'Main Wallet',
+        type: 'cash',
+        balance: 0,
+        currency: 'USD',
+        isDefault: true
+      })
+      return success(res, [newWallet])
+    }
     success(res, wallets)
   } catch (err) {
     error(res, err.message, 500)

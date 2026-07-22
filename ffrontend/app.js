@@ -3480,7 +3480,10 @@ if (page === 'account') {
         if (token) headers['Authorization'] = `Bearer ${token}`;
         
         const res = await fetch(url, { ...options, headers });
-        if (!res.ok) throw new Error(`Request to ${url} failed with status ${res.status}`);
+        if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            throw new Error(data.message || `Request to ${url} failed with status ${res.status}`);
+        }
         return res.json();
     }
 
@@ -3788,6 +3791,7 @@ if (page === 'account') {
                     linkedPlan: txPlanId,
                     walletId: currentWallet ? currentWallet._id : null
                 };
+                console.log("PAYLOAD SENDS:", payload);
 
                 await walletFetchJSON(`${WALLET_API_BASE}/transactions`, {
                     method: 'POST',

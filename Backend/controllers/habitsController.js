@@ -1,6 +1,8 @@
 const Habit = require('../models/Habit')
 const { createNotification } = require('./notificationController')
 const { success, error } = require('../Utils/responseHandler')
+const { sendNotificationEmail } = require('../Utils/emailService')
+const User = require('../models/User')
 
 exports.createHabit = async (req, res) => {
   try {
@@ -89,13 +91,26 @@ exports.completeHabit = async (req, res) => {
     // Check milestone rewards
     const milestones = [7, 14, 21, 30]
     if (milestones.includes(habit.currentstreak)) {
+      const milestoneTitle = getMilestoneTitle(habit.currentstreak)
+      const milestoneMsg   = getMilestoneMessage(habit.currentstreak, habit.name)
       await createNotification(
         req.user.id,
-        getMilestoneTitle(habit.currentstreak),
-        getMilestoneMessage(habit.currentstreak, habit.name),
+        milestoneTitle,
+        milestoneMsg,
         'habit',
         { model: 'Habit', documentId: habit._id }
       )
+      // Email for milestone — fires on user action, no cron
+      try {
+        const user = await User.findById(req.user.id).select('email name')
+        if (user) {
+          sendNotificationEmail(user.email, user.name, {
+            type: 'habit',
+            title: milestoneTitle,
+            message: milestoneMsg
+          })
+        }
+      } catch (emailErr) { /* non-blocking */ }
     }
 
     await habit.save()

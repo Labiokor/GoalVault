@@ -17,8 +17,16 @@ const {
   createBudget,
   getBudgets,
   updateBudget,
-  deleteBudget
+  deleteBudget,
+  // Reserved Balance
+  unreservePlan,
+  getBalanceSummary,
+  reconcile
 } = require('../controllers/financeController')
+
+// ─── Reserved Balance / Summary routes ─────────────────
+router.get('/balance-summary', auth, getBalanceSummary)
+router.get('/reconcile', auth, reconcile)
 
 // ─── Wallet routes ─────────────────────────────────────
 router.post('/wallets', auth, createWallet)
@@ -37,6 +45,7 @@ router.get('/summary', auth, getSummary)
 router.post('/budgets', auth, createBudget)
 router.get('/budgets', auth, getBudgets)
 router.put('/budgets/:id', auth, updateBudget)
+router.patch('/budgets/:id/unreserve', auth, unreservePlan)
 router.delete('/budgets/:id', auth, deleteBudget)
 
 module.exports = router

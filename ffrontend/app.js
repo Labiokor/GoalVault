@@ -66,6 +66,7 @@ const NOTIF_TYPES = {
     system:   { icon: '⚙️', label: 'System'   },
     delete:   { icon: '🗑️', label: 'Deleted'  },
     goal:     { icon: '🎯', label: 'Goal'     },
+    finance:  { icon: '💰', label: 'Finance'  },
 };
 
 function getRelativeTime(dateString) {
@@ -180,10 +181,18 @@ async function syncStreakGlobally() {
     }
 }
 
+let reminderInterval;
+let badgeInterval;
+
 function initGlobals() {
     updateNotifBadge();
     autoSetNavActive();
     syncStreakGlobally(); // keep streak in sync on every page
+
+    // Initial check & interval polling
+    pollDueReminders();
+    if (!reminderInterval) reminderInterval = setInterval(pollDueReminders, 30000);
+    if (!badgeInterval) badgeInterval = setInterval(updateNotifBadge, 30000);
 }
 if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', initGlobals);
@@ -209,41 +218,52 @@ function autoSetNavActive() {
 // ============================================================
 // GLOBAL REMINDER CHECKER
 // ============================================================
-function initGlobalReminders() {
-    const reminders = JSON.parse(localStorage.getItem('reminders') || '[]');
-    const now       = new Date();
-    reminders.forEach(reminder => {
-        const reminderTime = new Date(reminder.time);
-        const delay        = reminderTime - now;
-        if (reminder.triggered || delay <= 0) return;
-        setTimeout(() => {
-            const updated = JSON.parse(localStorage.getItem('reminders') || '[]');
-            const r       = updated.find(rem => rem.id === reminder.id);
-            if (r) { r.triggered = true; localStorage.setItem('reminders', JSON.stringify(updated)); }
-            if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-                try {
-                    new Notification('⏰ Goal Vault Reminder', {
-                        body: reminder.label,
-                        icon: 'https://img.icons8.com/fluency/96/alarm.png',
-                    });
-                } catch (e) { /* silent */ }
+const shownReminders = new Set();
+
+async function pollDueReminders() {
+    try {
+        const token = localStorage.getItem('gv_token');
+        if (!token) return; // Wait until authenticated
+        
+        const res = await apiFetch('/api/reminders?completed=false');
+        if (!res || !res.data) return;
+        
+        const now = new Date();
+        res.data.forEach(reminder => {
+            const reminderTime = new Date(reminder.datetime);
+            const rId = reminder._id || reminder.id;
+            
+            if (reminderTime <= now && !shownReminders.has(rId)) {
+                shownReminders.add(rId);
+                
+                if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+                    try {
+                        new Notification('⏰ Goal Vault Reminder', {
+                            body: reminder.title,
+                            icon: 'https://img.icons8.com/fluency/96/alarm.png',
+                        });
+                    } catch (e) { /* silent */ }
+                }
+                
+                pushNotification('reminder', 'Reminder fired! ⏰', `Your reminder "${reminder.title}" is due now.`);
+                showToast(`⏰ Reminder: ${reminder.title}`, 'warning');
             }
-            pushNotification('reminder', 'Reminder fired! ⏰', `Your reminder "${reminder.label}" is due now.`);
-            showToast(`⏰ Reminder: ${reminder.label}`, 'warning');
-        }, delay);
-    });
+        });
+    } catch (err) {
+        // Silently fail for background polling to prevent noise
+    }
 }
 
 function requestNotificationPermissionOnce() {
-    if (Notification.permission !== 'default') { initGlobalReminders(); return; }
-    if (localStorage.getItem('notifPermissionAsked')) { initGlobalReminders(); return; }
+    if (typeof Notification === 'undefined') return; // Not supported in this context
+    if (Notification.permission !== 'default') return;
+    if (localStorage.getItem('notifPermissionAsked')) return;
     Notification.requestPermission().then(permission => {
         localStorage.setItem('notifPermissionAsked', 'true');
         localStorage.setItem('notifPermission', permission);
-        initGlobalReminders();
     });
 }
-requestNotificationPermissionOnce();
+try { requestNotificationPermissionOnce(); } catch (e) { /* Notification API unavailable */ }
 
 // ============================================================
 // SHARED TOAST
@@ -378,7 +398,24 @@ function updateStreakDisplay() {
     if (streakCount)   streakCount.textContent = streak;
     if (streakTooltip) streakTooltip.textContent = `Current streak: ${streak} day${streak === 1 ? '' : 's'}`;
     localStorage.setItem('streak', streak);
+    applyStreakVisualState(streak);
     updateStreakPanel();
+}
+
+/**
+ * Applies visual state for streak based on streakVal.
+ * streak-zero class turns the fire icon dark red at 0.
+ * Works on both the nav streak-icon and the hero streak-flame.
+ */
+function applyStreakVisualState(streakVal) {
+    const icons = document.querySelectorAll('.streak-icon, .streak-flame');
+    icons.forEach(el => {
+        if (streakVal === 0) {
+            el.classList.add('streak-zero');
+        } else {
+            el.classList.remove('streak-zero');
+        }
+    });
 }
 
 function updateStreakPanel() {
@@ -388,11 +425,13 @@ function updateStreakPanel() {
     const streakNote  = document.getElementById('streakNote');
     if (!streakTitle) return;
     streakTitle.innerHTML = `${streak}-Day Winning<br>Streak`;
-    let badge = '🔥 KEEP GOING';
-    if (streak >= 7)  badge = '🔥 CONSISTENT';
-    if (streak >= 14) badge = '🔥 MASTER CONSISTENCY';
-    if (streak >= 21) badge = '🔥 UNSTOPPABLE';
-    if (streak >= 30) badge = '🏆 LEGEND';
+    let badge;
+    if (streak === 0)  badge = '🚀 START TODAY';
+    else if (streak >= 30) badge = '🏆 LEGEND';
+    else if (streak >= 21) badge = '🔥 UNSTOPPABLE';
+    else if (streak >= 14) badge = '🔥 MASTER CONSISTENCY';
+    else if (streak >= 7)  badge = '🔥 CONSISTENT';
+    else                   badge = '🔥 KEEP GOING';
     streakBadge.textContent = badge;
     const total = 18;
     streakDots.innerHTML = '';
@@ -474,7 +513,6 @@ const page = (() => {
 // ── Shared data helpers ───────────────────────────────────────
 function getTasks()     { return JSON.parse(localStorage.getItem('tasks'))     || []; }
 function getHabits()    { return JSON.parse(localStorage.getItem('habits'))    || []; }
-function getReminders() { return JSON.parse(localStorage.getItem('reminders')) || []; }
 
 let tasks  = getTasks();
 let habits = getHabits();
@@ -502,7 +540,9 @@ if (page === 'reminders') {
         let snoozeTargetId = null;
         let currentCat = 'personal';
         let currentFreq = 'once';
-        let currentColor = '#7c3aed';
+        let currentRemSort = 'soonest';
+        let activeStatFilter = 'upcoming';
+        let nextUpReminderId = null;
 
         const CAT_CONFIG = {
             personal: { icon: '🙂', label: 'Personal', color: '#7c3aed' },
@@ -559,13 +599,33 @@ if (page === 'reminders') {
 
         function buildReminderItem(r) {
             const cat = CAT_CONFIG[r.category] || CAT_CONFIG.default;
-            const color = r.color || cat.color;
             const formattedDate = formatReminderDate(r.datetime);
             const freqLabel = FREQ_LABELS[r.recurrenceType] || 'Once';
-            const overdue = !r.completed && new Date(r.datetime) < new Date();
+            
+            const now = new Date();
+            const rDate = new Date(r.datetime);
+            
+            let color = cat.color;
+            let stateClass = '';
+            let overdue = false;
+            let dueSoon = false;
+            
+            if (r.completed) {
+                stateClass = 'rem-completed';
+                color = '#22c55e'; // Green
+            } else if (rDate < now) {
+                stateClass = 'rem-overdue';
+                overdue = true;
+                color = '#ef4444'; // Red
+            } else if (rDate - now <= 2 * 60 * 60 * 1000) {
+                stateClass = 'rem-due-soon';
+                dueSoon = true;
+                color = '#f59e0b'; // Amber
+            }
 
             const item = document.createElement('div');
-            item.className = `rem-card ${r.completed ? 'rem-completed' : ''} ${overdue ? 'rem-overdue' : ''}`;
+            item.className = `rem-card ${stateClass}`;
+            item.dataset.id = r._id;
             item.style.setProperty('--rem-color', color);
 
             item.innerHTML = `
@@ -585,6 +645,9 @@ if (page === 'reminders') {
                             </span>` : ''}
                             ${overdue ? `<span class="rem-badge overdue-badge">
                                 <i class="fa-solid fa-triangle-exclamation"></i> Overdue
+                            </span>` : ''}
+                            ${dueSoon ? `<span class="rem-badge due-soon-badge">
+                                <i class="fa-solid fa-clock"></i> Due Soon
                             </span>` : ''}
                         </div>
                     </div>
@@ -635,63 +698,100 @@ if (page === 'reminders') {
             const list = document.getElementById('remList');
             if (!list) return;
 
-            // Sort: incomplete ASC, completed DESC
-            const sorted = [...remindersData].sort((a, b) => {
-                if (a.completed !== b.completed) return a.completed ? 1 : -1;
-                const timeA = new Date(a.datetime).getTime();
-                const timeB = new Date(b.datetime).getTime();
-                return a.completed ? timeB - timeA : timeA - timeB;
-            });
-
-            const upcoming = sorted.filter(r => !r.completed);
-            const completed = sorted.filter(r => r.completed);
-
-            list.innerHTML = '';
-
-            // Stats Update
+            // Stats Update (compute based on raw data)
+            const upcoming = remindersData.filter(r => !r.completed);
+            const completed = remindersData.filter(r => r.completed);
             const overdueCount = upcoming.filter(r => new Date(r.datetime) < new Date()).length;
+
             document.getElementById('statUpcoming').textContent = upcoming.length;
             document.getElementById('statOverdue').textContent = overdueCount;
             document.getElementById('statCompleted').textContent = completed.length;
-            document.getElementById('tabBadgeUpcoming').textContent = upcoming.length;
-            document.getElementById('tabBadgeOverdue').textContent = overdueCount;
-            document.getElementById('tabBadgeCompleted').textContent = completed.length;
 
             const nextEl = document.getElementById('statNext');
-            if (upcoming.length > 0) {
-                const soonest = upcoming[0];
-                nextEl.textContent = countdownText(soonest.datetime);
+            const nextUpCard = document.getElementById('nextUpCard');
+            const soonestList = [...upcoming].sort((a,b) => new Date(a.datetime) - new Date(b.datetime));
+            
+            if (soonestList.length > 0) {
+                nextUpReminderId = soonestList[0]._id;
+                nextEl.textContent = countdownText(soonestList[0].datetime);
+                if (nextUpCard) nextUpCard.classList.add('clickable');
             } else {
+                nextUpReminderId = null;
                 nextEl.textContent = '—';
+                if (nextUpCard) nextUpCard.classList.remove('clickable');
             }
 
-            // Upcoming Section
-            const upSec = document.createElement('div');
-            upSec.className = 'rem-section-wrap';
-            upSec.innerHTML = '<h3 class="rem-section-title"><i class="fa-solid fa-clock"></i> Upcoming</h3>';
-            const upList = document.createElement('div');
-            upList.className = 'rem-sub-list';
-            if (upcoming.length === 0) {
-                upList.innerHTML = '<div class="rem-empty-sub">No upcoming reminders</div>';
-            } else {
-                upcoming.forEach(r => upList.appendChild(buildReminderItem(r)));
-            }
-            upSec.appendChild(upList);
-            list.appendChild(upSec);
+            // Update active state on stat cards visually
+            document.querySelectorAll('.filter-stat').forEach(el => {
+                el.classList.toggle('active-filter', el.dataset.filter === activeStatFilter);
+            });
 
-            // Completed Section
-            const compSec = document.createElement('div');
-            compSec.className = 'rem-section-wrap';
-            compSec.innerHTML = '<h3 class="rem-section-title"><i class="fa-solid fa-circle-check"></i> Completed</h3>';
-            const compList = document.createElement('div');
-            compList.className = 'rem-sub-list';
-            if (completed.length === 0) {
-                compList.innerHTML = '<div class="rem-empty-sub">No completed reminders yet</div>';
-            } else {
-                completed.forEach(r => compList.appendChild(buildReminderItem(r)));
+            // Filter data for list view
+            let displayedReminders = [];
+            if (activeStatFilter === 'upcoming') {
+                displayedReminders = upcoming;
+            } else if (activeStatFilter === 'overdue') {
+                displayedReminders = upcoming.filter(r => new Date(r.datetime) < new Date());
+            } else if (activeStatFilter === 'completed') {
+                displayedReminders = completed;
             }
-            compSec.appendChild(compList);
-            list.appendChild(compSec);
+
+            // Sort filtered data
+            displayedReminders.sort((a, b) => {
+                if (currentRemSort === 'alpha') {
+                    return a.title.localeCompare(b.title);
+                }
+
+                const timeA = new Date(a.datetime).getTime();
+                const timeB = new Date(b.datetime).getTime();
+                
+                // For Upcoming: 'Soonest' means closest in the future (Ascending: timeA - timeB)
+                // For Overdue/Completed: 'Soonest' means closest in the past / most recent (Descending: timeB - timeA)
+                const isPastList = (activeStatFilter === 'completed' || activeStatFilter === 'overdue');
+
+                if (currentRemSort === 'soonest') {
+                    return isPastList ? timeB - timeA : timeA - timeB;
+                } else if (currentRemSort === 'oldest') {
+                    return isPastList ? timeA - timeB : timeB - timeA;
+                }
+                
+                return 0;
+            });
+
+            list.innerHTML = '';
+
+            // Render single section
+            const sec = document.createElement('div');
+            sec.className = 'rem-section-wrap';
+            sec.innerHTML = `
+                <div style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 16px;">
+                    <div class="rem-sort-wrap" style="margin: 0;">
+                        <label class="rem-sort-label">Sort:</label>
+                        <select class="rem-sort-select" id="remSortSelect">
+                            <option value="soonest" ${currentRemSort === 'soonest' ? 'selected' : ''}>Soonest First</option>
+                            <option value="oldest" ${currentRemSort === 'oldest' ? 'selected' : ''}>Oldest First</option>
+                            <option value="alpha" ${currentRemSort === 'alpha' ? 'selected' : ''}>A &rarr; Z</option>
+                        </select>
+                    </div>
+                </div>
+            `;
+            const subList = document.createElement('div');
+            subList.className = 'rem-sub-list';
+            if (displayedReminders.length === 0) {
+                subList.innerHTML = `<div class="rem-empty-sub">No reminders found for this filter</div>`;
+            } else {
+                displayedReminders.forEach(r => subList.appendChild(buildReminderItem(r)));
+            }
+            sec.appendChild(subList);
+            list.appendChild(sec);
+
+            const sortSelect = document.getElementById('remSortSelect');
+            if (sortSelect) {
+                sortSelect.addEventListener('change', (e) => {
+                    currentRemSort = e.target.value;
+                    renderReminders();
+                });
+            }
         }
 
         async function saveReminder() {
@@ -718,7 +818,7 @@ if (page === 'reminders') {
                 return;
             }
 
-            const body = { title, datetime, notes, recurring, recurrenceType, category: currentCat, color: currentColor };
+            const body = { title, datetime, notes, recurring, recurrenceType, category: currentCat };
 
             try {
                 let res;
@@ -830,7 +930,6 @@ if (page === 'reminders') {
             document.getElementById('remTimeInput').value = `${hours}:${mins}`;
 
             currentCat = r.category || 'personal';
-            currentColor = r.color || '#7c3aed';
             currentFreq = r.recurrenceType || 'once';
 
             updatePickers();
@@ -848,13 +947,11 @@ if (page === 'reminders') {
             document.getElementById('remDateTimeError').classList.remove('visible');
             currentCat = 'personal';
             currentFreq = 'once';
-            currentColor = '#7c3aed';
             updatePickers();
         }
 
         function updatePickers() {
             document.querySelectorAll('.rem-cat-btn').forEach(b => b.classList.toggle('active-cat', b.dataset.cat === currentCat));
-            document.querySelectorAll('.rem-color-btn').forEach(b => b.classList.toggle('active-color', b.dataset.color === currentColor));
             document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(b => b.classList.toggle('active-freq', b.dataset.freq === currentFreq));
         }
 
@@ -874,7 +971,6 @@ if (page === 'reminders') {
         document.getElementById('closeSnoozeModal')?.addEventListener('click', () => { closeOverlay('snoozeModalOverlay'); snoozeTargetId = null; });
 
         document.querySelectorAll('.rem-cat-btn').forEach(btn => btn.addEventListener('click', function() { currentCat = this.dataset.cat; updatePickers(); }));
-        document.querySelectorAll('.rem-color-btn').forEach(btn => btn.addEventListener('click', function() { currentColor = this.dataset.color; updatePickers(); }));
         document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(btn => btn.addEventListener('click', function() { currentFreq = this.dataset.freq; updatePickers(); }));
         document.querySelectorAll('.rem-snooze-btn').forEach(btn => btn.addEventListener('click', function() { snoozeReminder(parseInt(this.dataset.snooze)); }));
 
@@ -886,6 +982,38 @@ if (page === 'reminders') {
                     if (id === 'snoozeModalOverlay') snoozeTargetId = null;
                 }
             });
+        });
+
+        document.querySelectorAll('.filter-stat').forEach(btn => {
+            btn.addEventListener('click', function() {
+                activeStatFilter = this.dataset.filter;
+                renderReminders();
+            });
+        });
+
+        document.getElementById('nextUpCard')?.addEventListener('click', () => {
+            if (!nextUpReminderId) return;
+
+            // Switch to upcoming filter if not already active to ensure the card is rendered
+            if (activeStatFilter !== 'upcoming') {
+                activeStatFilter = 'upcoming';
+                renderReminders();
+            }
+
+            // Also ensure it is sorted soonest first so it's at the top? Not strictly necessary, but helpful
+            // Wait, the user just said scroll to it.
+
+            // Wait a tick for DOM to render if we just switched filters
+            setTimeout(() => {
+                const targetCard = document.querySelector(`[data-id="${nextUpReminderId}"]`);
+                if (targetCard) {
+                    targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    targetCard.classList.add('reminder-flash-highlight');
+                    setTimeout(() => {
+                        targetCard.classList.remove('reminder-flash-highlight');
+                    }, 1500);
+                }
+            }, 50);
         });
 
         document.addEventListener('keydown', e => {
@@ -906,6 +1034,7 @@ if (page === 'reminders') {
 if (page === 'dashboard') {
 
     function badgeText(s) {
+        if (s === 0)  return '"Complete a habit to start your streak! 🎯"';
         if (s >= 100) return '🏆 LEGEND';
         if (s >= 60)  return '⚡ UNSTOPPABLE';
         if (s >= 30)  return '🌟 ON FIRE';
@@ -913,6 +1042,21 @@ if (page === 'dashboard') {
         if (s >= 14)  return '💪 CONSISTENT';
         if (s >= 7)   return '✨ BUILDING MOMENTUM';
         return '🎯 KEEP GOING';
+    }
+
+    /**
+     * Returns a time-of-day greeting based on local browser hours.
+     * 5–11  → Good morning
+     * 12–16 → Good afternoon
+     * 17–20 → Good evening
+     * 21–4  → Good night
+     */
+    function getTimeGreeting() {
+        const h = new Date().getHours();
+        if (h >= 5  && h < 12) return 'Good morning';
+        if (h >= 12 && h < 17) return 'Good afternoon';
+        if (h >= 17 && h < 21) return 'Good evening';
+        return 'Good night';
     }
 
     function buildDots(streakVal) {
@@ -943,6 +1087,9 @@ if (page === 'dashboard') {
         const now    = new Date();
         const el     = document.getElementById('dashDate');
         if (el) el.textContent = days[now.getDay()] + ', ' + months[now.getMonth()] + ' ' + now.getDate() + ', ' + now.getFullYear();
+        // Set time-of-day greeting dynamically
+        const eyebrow = document.querySelector('.dash-greeting .eyebrow');
+        if (eyebrow) eyebrow.textContent = getTimeGreeting();
     }
 
     async function refreshDash() {
@@ -1030,7 +1177,7 @@ if (page === 'dashboard') {
             if (dashRemindersNum) dashRemindersNum.textContent = reminderCount;
             if (dashRemindersSub) dashRemindersSub.textContent = reminderCount === 0 ? 'no active reminders' : 'upcoming';
             
-            const sorted = [...activeReminders].sort((a, b) => new Date(a.time) - new Date(b.time));
+            const sorted = [...activeReminders].sort((a, b) => new Date(a.datetime) - new Date(b.datetime));
 
             if (reminderTrend) {
                 if (reminderCount === 0) {
@@ -1038,7 +1185,7 @@ if (page === 'dashboard') {
                     reminderTrend.className = 'stat-trend neu';
                 } else {
                     const nextReminder = sorted[0];
-                    const hoursLeft = Math.round((new Date(nextReminder.time) - new Date()) / (1000 * 60 * 60));
+                    const hoursLeft = Math.round((new Date(nextReminder.datetime) - new Date()) / (1000 * 60 * 60));
                     if (hoursLeft < 1) {
                         reminderTrend.textContent = 'Soon!';
                         reminderTrend.className = 'stat-trend warn';
@@ -1062,7 +1209,7 @@ if (page === 'dashboard') {
                             <span class="dash-item-icon">⏰</span>
                             <div class="dash-item-info">
                                 <div class="dash-item-title">${r.title}</div>
-                                <div class="dash-item-time">${new Date(r.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                                <div class="dash-item-time">${new Date(r.datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                             </div>
                         </div>
                     `).join('');
@@ -1105,7 +1252,13 @@ if (page === 'dashboard') {
         const heroStreakNum = document.getElementById('heroStreakNum');
         const heroStreakBadge = document.getElementById('heroStreakBadge');
         if (heroStreakNum) heroStreakNum.textContent = streakVal;
-        if (heroStreakBadge) heroStreakBadge.textContent = badgeText(streakVal);
+        if (heroStreakBadge) {
+            heroStreakBadge.textContent = badgeText(streakVal);
+            heroStreakBadge.classList.toggle('streak-badge-plain', streakVal === 0);
+        }
+
+        // Apply zero-streak visual state to hero flame + nav icon
+        applyStreakVisualState(streakVal);
 
         buildDots(Math.min(streakVal, 21));
         updateRing(streakVal);
@@ -1494,6 +1647,46 @@ if (page === 'habits') {
         });
     }
 
+    function calculatePeriodRate(habits, startDate, endDate) {
+        if (!habits || habits.length === 0) return 0;
+        let possible = 0;
+        let completed = 0;
+        let cur = new Date(startDate);
+        cur.setHours(0,0,0,0);
+        let last = new Date(endDate);
+        last.setHours(0,0,0,0);
+        
+        let days = [];
+        while (cur <= last) {
+            days.push(new Date(cur));
+            cur.setDate(cur.getDate() + 1);
+        }
+
+        habits.forEach(h => {
+            const created = h.createdAt ? new Date(h.createdAt) : new Date(0);
+            created.setHours(0,0,0,0);
+            const compSet = new Set((h.completedDates || []).map(d => getLocalYYYYMMDD(new Date(d))));
+
+            days.forEach(d => {
+                if (d < created) return; 
+                const dayOfWeek = d.getDay();
+                let shouldDo = false;
+                if (h.frequency === 'daily') shouldDo = true;
+                else if (h.frequency === 'weekdays' && dayOfWeek >= 1 && dayOfWeek <= 5) shouldDo = true;
+                else if (h.frequency === 'weekends' && (dayOfWeek === 0 || dayOfWeek === 6)) shouldDo = true;
+
+                if (shouldDo) {
+                    possible++;
+                    if (compSet.has(getLocalYYYYMMDD(d))) {
+                        completed++;
+                    }
+                }
+            });
+        });
+
+        return possible === 0 ? 0 : (completed / possible);
+    }
+
     function updateWeeklyChart() {
         const barCols = document.querySelectorAll('#habitSection .bar-col');
         if (!barCols.length) return;
@@ -1503,16 +1696,59 @@ if (page === 'habits') {
             const d = new Date(today);
             d.setDate(today.getDate() - (6 - i));
             const dateStr = getLocalYYYYMMDD(d);
-            const pct   = parseInt(localStorage.getItem(`habitHistory_${dateStr}`)) || 0;
+            // Calculate actual percentage from live habitsData utilizing existing robust logic
+            // which respects habit creation dates and scheduled frequencies (daily/weekdays/weekends)
+            const pctFloat = calculatePeriodRate(habitsData, d, d);
+            const pct = Math.round(pctFloat * 100);
+
             const bar   = col.querySelector('.bar');
             const label = col.querySelector('.bar-day');
-            if (bar) { bar.style.height = pct + '%'; bar.className = 'bar ' + (pct === 100 ? 'peak' : pct > 0 ? 'normal' : 'dim'); }
+            if (bar) { 
+                bar.style.height = pct + '%'; 
+                bar.className = 'bar ' + (pct === 100 ? 'peak' : pct > 0 ? 'normal' : 'dim'); 
+            }
             if (label) label.textContent = days[d.getDay()];
         });
+
+        const thisWeekStart = new Date(today);
+        thisWeekStart.setDate(thisWeekStart.getDate() - 6);
+        
+        const lastWeekEnd = new Date(thisWeekStart);
+        lastWeekEnd.setDate(lastWeekEnd.getDate() - 1);
+        const lastWeekStart = new Date(lastWeekEnd);
+        lastWeekStart.setDate(lastWeekStart.getDate() - 6);
+
+        const thisWeekRate = calculatePeriodRate(habitsData, thisWeekStart, today);
+        const lastWeekRate = calculatePeriodRate(habitsData, lastWeekStart, lastWeekEnd);
+
         const perfPct = document.querySelector('#habitSection .perf-pct');
         if (perfPct) {
-            const pct = habitsData.length === 0 ? 0 : Math.round((habitsData.filter(h => isHabitCompletedToday(h)).length / habitsData.length) * 100);
-            perfPct.textContent = pct + '%';
+            perfPct.textContent = Math.round(thisWeekRate * 100) + '%';
+        }
+
+        const perfChangeVal = document.querySelector('#habitSection .perf-change .val');
+        if (perfChangeVal) {
+            if (habitsData.length === 0) {
+                 perfChangeVal.textContent = '—';
+                 perfChangeVal.style.color = 'var(--text-muted)';
+                 perfChangeVal.style.fontFamily = "'Inter', sans-serif";
+            } else if (lastWeekRate === 0 && thisWeekRate > 0) {
+                 perfChangeVal.textContent = 'New';
+                 perfChangeVal.style.color = '#22c55e';
+                 perfChangeVal.style.fontFamily = "'Inter', sans-serif";
+            } else if (lastWeekRate === 0 && thisWeekRate === 0) {
+                 perfChangeVal.textContent = '—';
+                 perfChangeVal.style.color = 'var(--text-muted)';
+                 perfChangeVal.style.fontFamily = "'Inter', sans-serif";
+            } else {
+                 const change = ((thisWeekRate - lastWeekRate) / lastWeekRate) * 100;
+                 const rounded = Math.round(change);
+                 const sign = rounded > 0 ? '+' : '';
+                 perfChangeVal.textContent = sign + rounded + '%';
+                 perfChangeVal.style.color = rounded >= 0 ? '#22c55e' : '#ef4444';
+                 perfChangeVal.style.fontFamily = "'JetBrains Mono', monospace";
+                 perfChangeVal.style.fontWeight = "700";
+            }
         }
     }
 
@@ -1777,13 +2013,6 @@ if (page === 'habits') {
 
     habitInput.addEventListener('keypress', e => { if (e.key === 'Enter') addHabitBtn.click(); });
 
-    const fab = document.querySelector('#habitSection .fab');
-    if (fab) {
-        fab.addEventListener('click', () => {
-            habitInput.focus();
-            habitInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        });
-    }
 
     document.getElementById('prevMonth')?.addEventListener('click', () => {
         currentDisplayDate.setMonth(currentDisplayDate.getMonth() - 1);
@@ -1964,7 +2193,7 @@ if (page === 'planner') {
         const isLong     = goal.type    === 'long';
         const pct        = Math.min(100, Math.max(0, goal.progress || 0));
         const deadline   = isLong ? formatDeadline(goal.deadline) : null;
-        const hasReminder = getReminders().some(r => r.goalId === goal.id && !r.triggered);
+        const hasReminder = !!goal.hasReminder;
 
         // Count log entries
         const logCount = (goal.progressLog || []).length;
@@ -3004,6 +3233,22 @@ if (page === 'notebook') {
                 });
             }
 
+            const titleInput = document.getElementById('noteTitleInput');
+            if (titleInput) {
+                titleInput.addEventListener('focus', () => {
+                    if (titleInput.value === 'Untitled Note') {
+                        titleInput.value = '';
+                    }
+                });
+
+                titleInput.addEventListener('blur', () => {
+                    if (titleInput.value.trim() === '') {
+                        titleInput.value = 'Untitled Note';
+                        saveActive();
+                    }
+                });
+            }
+
             fetchNotes();
         }
 
@@ -3018,17 +3263,57 @@ if (page === 'account') {
     const fullNameInput = document.getElementById('fullName');
     const emailInput    = document.getElementById('email');
     const timezoneInput = document.getElementById('timezone');
+    const currencyInput = document.getElementById('currency');
     const accName       = document.getElementById('accName');
     const accEmail      = document.getElementById('accEmail');
 
+    // ── Initials avatar generator ────────────────────────────────
+    function drawInitialsAvatar(name) {
+        const canvas = document.getElementById('profileAvatarCanvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const size = 100;
+        canvas.width  = size;
+        canvas.height = size;
+
+        // Pick a hue from the name so it's deterministic per user
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        const hue = Math.abs(hash) % 360;
+
+        // Gradient background
+        const grad = ctx.createLinearGradient(0, 0, size, size);
+        grad.addColorStop(0, `hsl(${hue}, 65%, 50%)`);
+        grad.addColorStop(1, `hsl(${(hue + 40) % 360}, 70%, 38%)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Initials text
+        const parts    = name.trim().split(/\s+/);
+        const initials = parts.length >= 2
+            ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+            : (name.slice(0, 2)).toUpperCase();
+
+        ctx.fillStyle    = 'rgba(255,255,255,0.92)';
+        ctx.font         = `bold ${Math.round(size * 0.38)}px 'Poppins', 'Inter', Arial, sans-serif`;
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(initials, size / 2, size / 2 + 1);
+    }
+
     window.addEventListener('load', () => {
         const saved = JSON.parse(localStorage.getItem('accountData'));
+        let displayName = 'GV'; // fallback initials
         if (saved) {
             if (fullNameInput) fullNameInput.value = saved.name     || '';
             if (emailInput)    emailInput.value    = saved.email    || '';
             if (timezoneInput) timezoneInput.value = saved.timezone || '';
+            if (currencyInput) currencyInput.value = saved.currency || 'USD';
             if (accName)       accName.innerText   = saved.name     || 'Your Name';
             if (accEmail)      accEmail.innerText  = saved.email    || 'your@email.com';
+            if (saved.name)    displayName = saved.name;
         } else {
             const hubUser  = localStorage.getItem('hubUser')  || sessionStorage.getItem('hubUser')  || '';
             const hubEmail = localStorage.getItem('hubEmail') || sessionStorage.getItem('hubEmail') || '';
@@ -3036,10 +3321,21 @@ if (page === 'account') {
             if (accEmail)      accEmail.innerText  = hubEmail;
             if (fullNameInput) fullNameInput.value = hubUser;
             if (emailInput)    emailInput.value    = hubEmail;
+            if (hubUser)       displayName = hubUser;
         }
+
+        // Draw initials avatar OR show uploaded photo
         const savedImage = localStorage.getItem('profileImage');
         const profileImg = document.getElementById('profileImage');
-        if (savedImage && profileImg) profileImg.src = savedImage;
+        if (savedImage && profileImg) {
+            // Show uploaded photo, hide canvas
+            profileImg.src          = savedImage;
+            profileImg.style.display = 'block';
+            const canvas = document.getElementById('profileAvatarCanvas');
+            if (canvas) canvas.style.display = 'none';
+        } else {
+            drawInitialsAvatar(displayName);
+        }
 
         if (!localStorage.getItem('memberSince')) {
             localStorage.setItem('memberSince', new Date().toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' }));
@@ -3063,6 +3359,7 @@ if (page === 'account') {
             name:     fullNameInput.value.trim(),
             email:    emailInput.value.trim(),
             timezone: timezoneInput.value,
+            currency: currencyInput ? currencyInput.value : 'USD',
         };
         if (!data.name) { showToast('Please enter your full name.', 'error'); return; }
         if (!data.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
@@ -3071,6 +3368,10 @@ if (page === 'account') {
         localStorage.setItem('accountData', JSON.stringify(data));
         if (accName)  accName.innerText  = data.name;
         if (accEmail) accEmail.innerText = data.email;
+        // Redraw initials avatar if no custom photo uploaded
+        if (!localStorage.getItem('profileImage')) {
+            drawInitialsAvatar(data.name);
+        }
         document.querySelectorAll('#accountSection input:not(#memberSince)').forEach(i => i.setAttribute('readonly', true));
         document.querySelectorAll('#accountSection select').forEach(s => s.setAttribute('disabled', true));
         document.getElementById('saveBtn').style.display   = 'none';
@@ -3101,7 +3402,12 @@ if (page === 'account') {
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function () {
-                document.getElementById('profileImage').src = reader.result;
+                const profileImg = document.getElementById('profileImage');
+                const canvas     = document.getElementById('profileAvatarCanvas');
+                // Show the uploaded photo, hide the canvas avatar
+                profileImg.src           = reader.result;
+                profileImg.style.display = 'block';
+                if (canvas) canvas.style.display = 'none';
                 localStorage.setItem('profileImage', reader.result);
                 pushNotification('system', 'Profile photo updated 📸', 'Your profile picture has been changed successfully.');
                 showToast('Profile photo updated! ✓', 'success');
@@ -3116,6 +3422,471 @@ if (page === 'account') {
 // ============================================================
 // ALERTS / NOTIFICATIONS PAGE
 // ============================================================
+// Wallet / Finance — account page wiring
+if (page === 'account') {
+    const WALLET_API_BASE = 'http://localhost:5000/api/finance'; // adjust to match your backend
+
+    const walletState = { plans: [], transactions: [] };
+
+    function walletFormatMoney(n) {
+        const saved = JSON.parse(localStorage.getItem('accountData')) || {};
+        const userCurrency = saved.currency || 'USD';
+        return new Intl.NumberFormat(undefined, { style: 'currency', currency: userCurrency }).format(n || 0);
+    }
+
+    function walletFormatDate(dateStr) {
+        const d = new Date(dateStr);
+        if (isNaN(d)) return dateStr;
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+
+    function walletEscape(str) {
+        const div = document.createElement('div');
+        div.textContent = str == null ? '' : String(str);
+        return div.innerHTML;
+    }
+
+    async function walletFetchJSON(url, options = {}) {
+        const token = localStorage.getItem('gv_token');
+        const headers = { ...options.headers };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        
+        const res = await fetch(url, { ...options, headers });
+        if (!res.ok) throw new Error(`Request to ${url} failed with status ${res.status}`);
+        return res.json();
+    }
+
+    async function loadWalletSummary() {
+        try {
+            // Using getSummary endpoint which returns { wallets: [...] }
+            const summaryRes = await walletFetchJSON(`${WALLET_API_BASE}/summary`);
+            const summary = summaryRes.data || summaryRes;
+            
+            const balRes = await walletFetchJSON(`${WALLET_API_BASE}/balance-summary`);
+            const balData = balRes.data || balRes;
+            
+            document.getElementById('balanceAmount').textContent = walletFormatMoney(balData.balance);
+            
+            // Reconcile warning
+            try {
+                const recRes = await walletFetchJSON(`${WALLET_API_BASE}/reconcile`);
+                const recData = recRes.data || recRes;
+                const warnEl = document.getElementById('reconcileWarning');
+                if (warnEl) {
+                    warnEl.style.display = recData.deficit > 0 ? 'block' : 'none';
+                }
+            } catch(e) {}
+            
+            const breakdownAvailable = document.getElementById('breakdownAvailable');
+            if (breakdownAvailable) {
+                document.getElementById('breakdownBalance').textContent = walletFormatMoney(balData.balance);
+                document.getElementById('breakdownReserved').textContent = '-' + walletFormatMoney(balData.reserved);
+                breakdownAvailable.textContent = walletFormatMoney(balData.available);
+                walletState.available = balData.available;
+            }
+
+            const label = document.getElementById('monthChangeLabel');
+            if (label) {
+                const change = summary.monthChange || 0;
+                label.textContent = `${change >= 0 ? '+' : ''}${walletFormatMoney(change)} this month`;
+            }
+        } catch (err) {
+            console.error('Could not load wallet summary', err);
+        }
+    }
+
+    async function loadWalletPlans() {
+        try {
+            const res = await walletFetchJSON(`${WALLET_API_BASE}/budgets?type=plan`);
+            walletState.plans = (res.data || []).map(p => ({
+                id: p._id,
+                name: p.category,
+                saved: p.savedAmount || 0,
+                target: p.targetAmount || 0,
+                deadline: p.deadline,
+                reason: p.reason
+            }));
+            renderWalletPlans();
+            populatePlanDropdown();
+        } catch (err) {
+            console.error('Could not load plans', err);
+        }
+    }
+
+    async function loadWalletTransactions() {
+        try {
+            // Fetch wallets first to get default wallet ID
+            const walletsRes = await walletFetchJSON(`${WALLET_API_BASE}/wallets`);
+            const wallets = walletsRes.data || [];
+            if (!wallets.length) return;
+            const currentWallet = wallets.find(w => w.isDefault) || wallets[0];
+            
+            const res = await walletFetchJSON(`${WALLET_API_BASE}/transactions?walletId=${currentWallet._id}`);
+            walletState.transactions = res.data || [];
+            renderWalletTransactions();
+        } catch (err) {
+            console.error('Could not load transactions', err);
+        }
+    }
+
+    function renderWalletPlans() {
+        const container = document.getElementById('walletPlanList') || document.getElementById('walletPlansList');
+        if (!container) return;
+        if (!walletState.plans.length) {
+            container.innerHTML = `
+                <div style="text-align:center; padding:24px; color:var(--text-muted); font-size:0.84rem; font-family:'Inter',sans-serif; background:var(--surface-2); border-radius:var(--radius); border:1.5px dashed var(--border);">
+                    <div style="font-size:1.8rem;margin-bottom:8px;">🎯</div>
+                    No plans yet
+                </div>`;
+            return;
+        }
+        container.innerHTML = walletState.plans.map((plan) => {
+            const pct = Math.min(100, Math.round((plan.saved / plan.target) * 100));
+            return `
+                <div class="wallet-plan-card">
+                    <div class="wallet-plan-top">
+                        <p class="wallet-plan-name">${walletEscape(plan.name)}</p>
+                        <p class="wallet-plan-deadline">Due ${walletFormatDate(plan.deadline)}</p>
+                    </div>
+                    <div class="wallet-progress-track">
+                        <div class="wallet-progress-fill" style="width:${pct}%;"></div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <p class="wallet-plan-meta">${walletFormatMoney(plan.saved)} of ${walletFormatMoney(plan.target)} · ${walletEscape(plan.reason)}</p>
+                        ${plan.saved > 0 ? `<button class="btn wallet-btn-secondary" style="padding:4px 8px; font-size:0.7rem; border-radius:4px;" onclick="openReleaseModal('${plan.id}', ${plan.saved})"><i class="fa-solid fa-unlock"></i> Release</button>` : ''}
+                    </div>
+                </div>`;
+        }).join('');
+    }
+
+    function walletTxRowHTML(tx) {
+        const icon = tx.type === 'deposit' ? '⬇️' : '⬆️';
+        const sign = tx.type === 'deposit' ? '+' : '-';
+        return `
+            <div class="wallet-tx-row">
+                <div style="display:flex; align-items:center; gap:10px;">
+                    <span>${icon}</span>
+                    <div>
+                        <p class="wallet-tx-reason">${walletEscape(tx.description || tx.reason)}</p>
+                        <p class="wallet-tx-meta">${walletFormatDate(tx.date)} · ${walletEscape(tx.category)}</p>
+                    </div>
+                </div>
+                <p class="wallet-tx-amount ${tx.type}">${sign}${walletFormatMoney(tx.amount)}</p>
+            </div>`;
+    }
+
+    function renderWalletTransactions() {
+        const container = document.getElementById('walletTxList');
+        if (!container) return;
+        if (!walletState.transactions.length) {
+            container.innerHTML = `
+                <div style="text-align:center; padding:24px; color:var(--text-muted); font-size:0.84rem; font-family:'Inter',sans-serif; background:var(--surface-2); border-radius:var(--radius); border:1.5px dashed var(--border);">
+                    <div style="font-size:1.8rem;margin-bottom:8px;">🧾</div>
+                    No transactions yet
+                </div>`;
+            return;
+        }
+        container.innerHTML = walletState.transactions.slice(0, 5).map(walletTxRowHTML).join('');
+    }
+
+    function populatePlanDropdown() {
+        const select = document.getElementById('walletTxPlan');
+        if (!select) return;
+        select.innerHTML = '<option value="">None</option>' +
+            walletState.plans.map((p) => `<option value="${p.id}">${walletEscape(p.name)}</option>`).join('');
+    }
+
+    function openWalletModal(id) { 
+        const el = document.getElementById(id);
+        if (el) el.hidden = false; 
+    }
+    function closeWalletModal(id) { 
+        const el = document.getElementById(id);
+        if (el) el.hidden = true; 
+    }
+
+    document.querySelectorAll('[data-close]').forEach((btn) => {
+        btn.addEventListener('click', () => closeWalletModal(btn.dataset.close));
+    });
+
+    const addFundsBtn = document.getElementById('openAddFunds');
+    if (addFundsBtn) {
+        addFundsBtn.addEventListener('click', () => {
+            document.getElementById('walletTxType').value = 'deposit';
+            document.getElementById('walletTxModalTitle').textContent = 'Add Funds';
+            document.getElementById('walletTxSubmit').textContent = 'Add deposit';
+            document.getElementById('walletTxSubmit').disabled = false;
+            document.getElementById('walletTxDate').valueAsDate = new Date();
+            const breakdown = document.getElementById('walletWithdrawBreakdown');
+            if(breakdown) breakdown.style.display = 'none';
+            const amountInput = document.getElementById('walletTxAmount');
+            if(amountInput) amountInput.removeAttribute('max');
+            openWalletModal('walletTxModal');
+        });
+    }
+
+    const withdrawBtn = document.getElementById('openWithdraw');
+    if (withdrawBtn) {
+        withdrawBtn.addEventListener('click', () => {
+            document.getElementById('walletTxType').value = 'withdraw';
+            document.getElementById('walletTxModalTitle').textContent = 'Withdraw Funds';
+            document.getElementById('walletTxSubmit').textContent = 'Withdraw';
+            document.getElementById('walletTxSubmit').disabled = false;
+            document.getElementById('walletTxDate').valueAsDate = new Date();
+            
+            const breakdown = document.getElementById('walletWithdrawBreakdown');
+            if(breakdown) breakdown.style.display = 'block';
+            
+            const planSelect = document.getElementById('walletTxPlan');
+            if(planSelect) planSelect.value = '';
+            
+            const planLimit = document.getElementById('breakdownPlanLimit');
+            if(planLimit) planLimit.style.display = 'none';
+            
+            const amountInput = document.getElementById('walletTxAmount');
+            if(amountInput) amountInput.max = walletState.available || 0;
+            
+            openWalletModal('walletTxModal');
+        });
+    }
+
+    const walletTxPlan = document.getElementById('walletTxPlan');
+    if (walletTxPlan) {
+        walletTxPlan.addEventListener('change', (e) => {
+            const planId = e.target.value;
+            const isWithdraw = document.getElementById('walletTxType').value === 'withdraw';
+            if (isWithdraw) {
+                if (planId) {
+                    const plan = walletState.plans.find(p => p.id === planId);
+                    if (plan) {
+                        document.getElementById('breakdownPlanLimit').style.display = 'block';
+                        document.getElementById('breakdownPlanAmt').textContent = walletFormatMoney(plan.saved);
+                        document.getElementById('walletTxAmount').max = plan.saved;
+                    }
+                } else {
+                    document.getElementById('breakdownPlanLimit').style.display = 'none';
+                    document.getElementById('walletTxAmount').max = walletState.available || 0;
+                }
+            }
+        });
+    }
+
+    window.openReleaseModal = function(planId, maxAmount) {
+        document.getElementById('walletReleasePlanId').value = planId;
+        document.getElementById('walletReleaseMax').textContent = walletFormatMoney(maxAmount);
+        const amountInput = document.getElementById('walletReleaseAmount');
+        amountInput.value = '';
+        amountInput.max = maxAmount;
+        openWalletModal('walletReleaseModal');
+    };
+
+    const newPlanBtn = document.getElementById('openNewPlan');
+    if (newPlanBtn) {
+        newPlanBtn.addEventListener('click', () => openWalletModal('walletPlanModal'));
+    }
+
+    const viewAllBtn = document.getElementById('viewAllTx');
+    if (viewAllBtn) {
+        viewAllBtn.addEventListener('click', () => {
+            renderAllWalletTransactions();
+            openWalletModal('walletAllTxModal');
+        });
+    }
+
+    const txForm = document.getElementById('walletTxForm');
+    if (txForm) {
+        txForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const submitBtn = document.getElementById('walletTxSubmit');
+            const originalText = submitBtn.textContent;
+
+            // Snapshot form values NOW before any async work
+            const txType    = document.getElementById('walletTxType').value;
+            const txAmount  = parseFloat(document.getElementById('walletTxAmount').value);
+            const txReason  = document.getElementById('walletTxReason').value.trim();
+            const txCat     = document.getElementById('walletTxCategory').value;
+            const txDate    = document.getElementById('walletTxDate').value;
+            const txPlanId  = document.getElementById('walletTxPlan').value || null;
+
+            // ── Plan-withdrawal confirmation ─────────────────────────
+            if (txType === 'withdraw' && txPlanId) {
+                const plan = walletState.plans.find(p => p.id === txPlanId);
+                if (plan) {
+                    const savedAfter  = Math.max(0, plan.saved - txAmount);
+                    const pctBefore   = plan.target > 0 ? Math.min(100, Math.round((plan.saved  / plan.target) * 100)) : 0;
+                    const pctAfter    = plan.target > 0 ? Math.min(100, Math.round((savedAfter / plan.target) * 100)) : 0;
+                    const setback     = pctBefore - pctAfter;
+
+                    const confirmed = await new Promise(resolve => {
+                        confirmDelete(
+                            `Withdrawing ${walletFormatMoney(txAmount)} from "${plan.name}" will reduce your progress from ${pctBefore}% to ${pctAfter}% — a ${setback}% setback toward your ${walletFormatMoney(plan.target)} goal. Are you sure you want to proceed?`,
+                            () => resolve(true),
+                            {
+                                icon: '⚠️',
+                                title: 'Withdraw from Plan?',
+                                confirmLabel: 'Yes, Withdraw',
+                                btnColor: '#f59e0b'
+                            }
+                        );
+                        // confirmDelete calls onConfirm on yes; we need to catch cancel too
+                        // Override: wrap it so cancel resolves false
+                        const modal     = document.getElementById('confirmModal');
+                        const cancelBtn = document.getElementById('confirmCancel');
+                        const origCancel = cancelBtn.onclick;
+                        cancelBtn.addEventListener('click', () => resolve(false), { once: true });
+                        modal.querySelector('.confirm-backdrop')?.addEventListener('click', () => resolve(false), { once: true });
+                    });
+
+                    if (!confirmed) return; // User cancelled — do nothing
+                }
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+
+            try {
+                // Need wallet ID for backend request
+                const walletsRes = await walletFetchJSON(`${WALLET_API_BASE}/wallets`);
+                const wallets = walletsRes.data || [];
+                const currentWallet = wallets.find(w => w.isDefault) || wallets[0];
+
+                const payload = {
+                    type: txType,
+                    amount: txAmount,
+                    description: txReason,
+                    category: txCat,
+                    date: txDate,
+                    linkedPlan: txPlanId,
+                    walletId: currentWallet ? currentWallet._id : null
+                };
+
+                await walletFetchJSON(`${WALLET_API_BASE}/transactions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                e.target.reset();
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+                closeWalletModal('walletTxModal');
+                await Promise.all([loadWalletSummary(), loadWalletPlans(), loadWalletTransactions()]);
+
+                // Trigger real-time notifications for deposits and withdrawals
+                if (payload.type === 'deposit' || payload.type === 'withdraw') {
+                    const isDep = payload.type === 'deposit';
+                    const title = isDep ? 'Deposit received' : 'Withdrawal made';
+                    const msgAmount = payload.amount.toFixed(2);
+                    const actionStr = isDep ? 'deposited' : 'withdrawn';
+                    const message = `${walletFormatMoney(payload.amount)} ${actionStr}${payload.linkedPlan ? ' from plan' : ''} — ${payload.description || payload.category}`;
+
+                    pushNotification('finance', title, message);
+                    if (Notification.permission === 'granted') {
+                        try { new Notification(title, { body: message }); } catch (err2) { /* silent */ }
+                    }
+                    if (typeof updateNotifBadge === 'function') updateNotifBadge();
+                }
+            } catch (err) {
+                console.error('Could not save transaction', err);
+                showToast(err.message || 'Could not save the transaction. Please try again.', 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
+            }
+        });
+    }
+
+    const planForm = document.getElementById('walletPlanForm');
+    if (planForm) {
+        planForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                type: 'plan',
+                category: document.getElementById('walletPlanName').value.trim(),
+                targetAmount: parseFloat(document.getElementById('walletPlanTarget').value),
+                deadline: document.getElementById('walletPlanDeadline').value,
+                reason: document.getElementById('walletPlanReason').value.trim(),
+            };
+            try {
+                await walletFetchJSON(`${WALLET_API_BASE}/budgets`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                e.target.reset();
+                closeWalletModal('walletPlanModal');
+                await loadWalletPlans();
+            } catch (err) {
+                console.error('Could not save plan', err);
+                alert('Could not save the plan. Please try again.');
+            }
+        });
+    }
+
+    const releaseForm = document.getElementById('walletReleaseForm');
+    if (releaseForm) {
+        releaseForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const planId = document.getElementById('walletReleasePlanId').value;
+            const amount = parseFloat(document.getElementById('walletReleaseAmount').value);
+            try {
+                await walletFetchJSON(`${WALLET_API_BASE}/budgets/${planId}/unreserve`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount }),
+                });
+                e.target.reset();
+                closeWalletModal('walletReleaseModal');
+                await Promise.all([loadWalletSummary(), loadWalletPlans()]);
+                if (typeof showToast === 'function') showToast('Funds released successfully! ✓', 'success');
+            } catch (err) {
+                console.error('Could not release funds', err);
+                alert('Could not release funds. Please try again.');
+            }
+        });
+    }
+
+    function renderAllWalletTransactions() {
+        const list = document.getElementById('walletAllTxList');
+        if (!list) return;
+        const typeFilter = document.getElementById('walletFilterType').value;
+        const categoryFilter = document.getElementById('walletFilterCategory').value;
+
+        const catSelect = document.getElementById('walletFilterCategory');
+        if (catSelect.options.length <= 1) {
+            const categories = [...new Set(walletState.transactions.map((t) => t.category))];
+            catSelect.innerHTML = '<option value="">All categories</option>' +
+                categories.map((c) => `<option value="${c}">${walletEscape(c)}</option>`).join('');
+        }
+
+        const filtered = walletState.transactions.filter((t) =>
+            (!typeFilter || t.type === typeFilter) && (!categoryFilter || t.category === categoryFilter));
+
+        list.innerHTML = filtered.length
+            ? filtered.map(walletTxRowHTML).join('')
+            : `<p style="text-align:center; color:var(--text-muted); font-size:0.84rem; padding:20px;">No transactions match these filters.</p>`;
+    }
+
+    const typeFilterEl = document.getElementById('walletFilterType');
+    if (typeFilterEl) typeFilterEl.addEventListener('change', renderAllWalletTransactions);
+    const catFilterEl = document.getElementById('walletFilterCategory');
+    if (catFilterEl) catFilterEl.addEventListener('change', renderAllWalletTransactions);
+
+    function initWallet() {
+        loadWalletSummary();
+        loadWalletPlans();
+        loadWalletTransactions();
+    }
+
+    // Ensure wallet loads when wallet subpage is opened
+    const originalOpen = window.openSettingsPage;
+    window.openSettingsPage = function (pageId) {
+        originalOpen(pageId);
+        if (pageId === 'walletPageInner') {
+            setTimeout(() => initWallet(), 60);
+        }
+    };
+}
+
 if (page === 'notifications' || page === 'alerts') {
     let activeNotifFilter = 'all';
 
@@ -3338,4 +4109,8 @@ if (page === 'notifications' || page === 'alerts') {
     } else {
         fetchNotifications();
     }
+    
+    // Live polling for the notifications list when actively viewing it
+    setInterval(fetchNotifications, 30000);
 }
+

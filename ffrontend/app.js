@@ -3267,8 +3267,45 @@ if (page === 'account') {
     const accName       = document.getElementById('accName');
     const accEmail      = document.getElementById('accEmail');
 
+    // ── Initials avatar generator ────────────────────────────────
+    function drawInitialsAvatar(name) {
+        const canvas = document.getElementById('profileAvatarCanvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        const size = 100;
+        canvas.width  = size;
+        canvas.height = size;
+
+        // Pick a hue from the name so it's deterministic per user
+        let hash = 0;
+        for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+        const hue = Math.abs(hash) % 360;
+
+        // Gradient background
+        const grad = ctx.createLinearGradient(0, 0, size, size);
+        grad.addColorStop(0, `hsl(${hue}, 65%, 50%)`);
+        grad.addColorStop(1, `hsl(${(hue + 40) % 360}, 70%, 38%)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Initials text
+        const parts    = name.trim().split(/\s+/);
+        const initials = parts.length >= 2
+            ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+            : (name.slice(0, 2)).toUpperCase();
+
+        ctx.fillStyle    = 'rgba(255,255,255,0.92)';
+        ctx.font         = `bold ${Math.round(size * 0.38)}px 'Poppins', 'Inter', Arial, sans-serif`;
+        ctx.textAlign    = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(initials, size / 2, size / 2 + 1);
+    }
+
     window.addEventListener('load', () => {
         const saved = JSON.parse(localStorage.getItem('accountData'));
+        let displayName = 'GV'; // fallback initials
         if (saved) {
             if (fullNameInput) fullNameInput.value = saved.name     || '';
             if (emailInput)    emailInput.value    = saved.email    || '';
@@ -3276,6 +3313,7 @@ if (page === 'account') {
             if (currencyInput) currencyInput.value = saved.currency || 'USD';
             if (accName)       accName.innerText   = saved.name     || 'Your Name';
             if (accEmail)      accEmail.innerText  = saved.email    || 'your@email.com';
+            if (saved.name)    displayName = saved.name;
         } else {
             const hubUser  = localStorage.getItem('hubUser')  || sessionStorage.getItem('hubUser')  || '';
             const hubEmail = localStorage.getItem('hubEmail') || sessionStorage.getItem('hubEmail') || '';
@@ -3283,10 +3321,21 @@ if (page === 'account') {
             if (accEmail)      accEmail.innerText  = hubEmail;
             if (fullNameInput) fullNameInput.value = hubUser;
             if (emailInput)    emailInput.value    = hubEmail;
+            if (hubUser)       displayName = hubUser;
         }
+
+        // Draw initials avatar OR show uploaded photo
         const savedImage = localStorage.getItem('profileImage');
         const profileImg = document.getElementById('profileImage');
-        if (savedImage && profileImg) profileImg.src = savedImage;
+        if (savedImage && profileImg) {
+            // Show uploaded photo, hide canvas
+            profileImg.src          = savedImage;
+            profileImg.style.display = 'block';
+            const canvas = document.getElementById('profileAvatarCanvas');
+            if (canvas) canvas.style.display = 'none';
+        } else {
+            drawInitialsAvatar(displayName);
+        }
 
         if (!localStorage.getItem('memberSince')) {
             localStorage.setItem('memberSince', new Date().toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' }));
@@ -3319,6 +3368,10 @@ if (page === 'account') {
         localStorage.setItem('accountData', JSON.stringify(data));
         if (accName)  accName.innerText  = data.name;
         if (accEmail) accEmail.innerText = data.email;
+        // Redraw initials avatar if no custom photo uploaded
+        if (!localStorage.getItem('profileImage')) {
+            drawInitialsAvatar(data.name);
+        }
         document.querySelectorAll('#accountSection input:not(#memberSince)').forEach(i => i.setAttribute('readonly', true));
         document.querySelectorAll('#accountSection select').forEach(s => s.setAttribute('disabled', true));
         document.getElementById('saveBtn').style.display   = 'none';
@@ -3349,7 +3402,12 @@ if (page === 'account') {
             if (!file) return;
             const reader = new FileReader();
             reader.onload = function () {
-                document.getElementById('profileImage').src = reader.result;
+                const profileImg = document.getElementById('profileImage');
+                const canvas     = document.getElementById('profileAvatarCanvas');
+                // Show the uploaded photo, hide the canvas avatar
+                profileImg.src           = reader.result;
+                profileImg.style.display = 'block';
+                if (canvas) canvas.style.display = 'none';
                 localStorage.setItem('profileImage', reader.result);
                 pushNotification('system', 'Profile photo updated 📸', 'Your profile picture has been changed successfully.');
                 showToast('Profile photo updated! ✓', 'success');

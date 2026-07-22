@@ -562,6 +562,10 @@ async function checkBudgetPrompt() {
   try {
     const res = await api.finance.checkBudgetPrompt({ category, amount })
     if (res.data?.prompt) {
+      // Show popup alert
+      alert('⚠️ ' + res.data.prompt)
+      
+      // Also show in the inline prompt box
       promptBox.textContent = '⚠️ ' + res.data.prompt
       promptBox.classList.remove('hidden')
       if (res.data.willExceed) {

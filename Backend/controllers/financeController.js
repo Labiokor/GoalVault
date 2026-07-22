@@ -104,21 +104,21 @@ exports.addTransaction = async (req, res) => {
         const budget = await Budget.findOne({ user: req.user.id, category, month })
 
         if (budget) {
-          const spent = await Transaction.aggregate([
-            {
-              $match: {
-                user: new mongoose.Types.ObjectId(req.user.id),
-                category,
-                type: 'expense'
-              }
-            },
-            {
-              $group: {
-                _id: null,
-                total: { $sum: '$amount' }
-              }
-            }
-          ])
+    const spent = await Transaction.aggregate([
+      {
+        $match: {
+          user: new mongoose.Types.ObjectId(req.user.id),
+          category,
+          type: { $in: ['expense', 'withdraw'] }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' }
+        }
+      }
+    ])
 
           const totalSpent = spent[0]?.total || 0
           if (totalSpent + amount > budget.limit) {
@@ -344,7 +344,7 @@ exports.checkBudgetPrompt = async (req, res) => {
         $match: {
           user: new mongoose.Types.ObjectId(req.user.id),
           category,
-          type: 'expense'
+          type: { $in: ['expense', 'withdraw'] }
         }
       },
       {

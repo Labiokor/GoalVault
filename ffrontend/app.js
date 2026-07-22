@@ -3533,6 +3533,7 @@ if (page === 'account') {
             document.getElementById('walletTxType').value = 'deposit';
             document.getElementById('walletTxModalTitle').textContent = 'Add Funds';
             document.getElementById('walletTxSubmit').textContent = 'Add deposit';
+            document.getElementById('walletTxSubmit').disabled = false;
             document.getElementById('walletTxDate').valueAsDate = new Date();
             openWalletModal('walletTxModal');
         });
@@ -3544,6 +3545,7 @@ if (page === 'account') {
             document.getElementById('walletTxType').value = 'withdraw';
             document.getElementById('walletTxModalTitle').textContent = 'Withdraw Funds';
             document.getElementById('walletTxSubmit').textContent = 'Withdraw';
+            document.getElementById('walletTxSubmit').disabled = false;
             document.getElementById('walletTxDate').valueAsDate = new Date();
             openWalletModal('walletTxModal');
         });
@@ -3567,6 +3569,12 @@ if (page === 'account') {
         txForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             
+            const submitBtn = document.getElementById('walletTxSubmit');
+            const originalText = submitBtn.textContent;
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Processing...';
+            
+            
             // Need wallet ID for backend request
             const walletsRes = await walletFetchJSON(`${WALLET_API_BASE}/wallets`);
             const wallets = walletsRes.data || [];
@@ -3588,6 +3596,8 @@ if (page === 'account') {
                     body: JSON.stringify(payload),
                 });
                 e.target.reset();
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
                 closeWalletModal('walletTxModal');
                 await Promise.all([loadWalletSummary(), loadWalletPlans(), loadWalletTransactions()]);
                 
@@ -3608,6 +3618,8 @@ if (page === 'account') {
             } catch (err) {
                 console.error('Could not save transaction', err);
                 alert('Could not save the transaction. Please try again.');
+                submitBtn.disabled = false;
+                submitBtn.textContent = originalText;
             }
         });
     }

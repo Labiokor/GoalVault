@@ -49,7 +49,7 @@ exports.processRecurringReminders = () => {
 
         const user = await User.findById(reminder.user._id || reminder.user)
         if (user) {
-          sendReminderEmail(user.email, user.name, reminder)
+          await sendReminderEmail(user.email, user.name, reminder)
         }
       }))
 
@@ -74,7 +74,7 @@ exports.processRecurringReminders = () => {
 
         const user = await User.findById(reminder.user._id || reminder.user)
         if (user) {
-          sendReminderEmail(user.email, user.name, reminder)
+          await sendReminderEmail(user.email, user.name, reminder)
         }
       }))
 

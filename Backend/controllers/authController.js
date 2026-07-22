@@ -72,7 +72,7 @@ exports.register = async (req, res) => {
     })
 
     // Send welcome email
-    sendWelcomeEmail(user.email, user.name)
+    await sendWelcomeEmail(user.email, user.name)
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
       expiresIn: process.env.JWT_EXPIRES_IN || '24h'
@@ -117,4 +117,4 @@ exports.getMe = async (req, res) => {
   } catch (err) {
     error(res, err.message, 500)
   }
-}
+}

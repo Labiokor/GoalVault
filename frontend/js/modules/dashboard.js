@@ -51,6 +51,45 @@ function buildRing(streakVal) {
   return { offset: circ - (pct / 100) * circ, pct }
 }
 
+function buildGoalItems(longTermGoals) {
+  if (!Array.isArray(longTermGoals) || longTermGoals.length === 0) {
+    return '<div class="text-sm text-on-surface-variant">No long-term goals yet</div>'
+  }
+
+  // Keep it simple and robust: rely on common fields used elsewhere in the app.
+  // Expected: { title, description, progress, targetAmount, deadline, status, priority }
+  return longTermGoals
+    .slice(0, 4)
+    .map(g => {
+      const title = g.title || 'Untitled goal'
+      const desc = g.description ? `<p class="text-xs text-on-surface-variant mt-1">${g.description}</p>` : ''
+      const pct = Math.min(100, Math.max(0, Number(g.progress || 0)))
+      const deadlineHTML = g.deadline
+        ? `<div class="text-[10px] text-on-surface-variant mt-2">${new Date(g.deadline).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</div>`
+        : ''
+
+      return `
+        <div class="rounded-xl p-4 bg-surface-container-lowest ring-1 ring-outline-variant/5">
+          <div class="flex items-start justify-between gap-3">
+            <div>
+              <div class="text-sm font-bold text-on-surface">${title}</div>
+              ${desc}
+              ${deadlineHTML}
+            </div>
+            <div class="shrink-0 text-right">
+              <div class="text-xl font-black text-primary">${pct}%</div>
+              <div class="text-[10px] text-on-surface-variant uppercase font-bold">Progress</div>
+            </div>
+          </div>
+          <div class="mt-3 w-full h-2 rounded-full overflow-hidden" style="background:rgba(0,0,0,0.08)">
+            <div class="h-2 rounded-full transition-all" style="width:${pct}%;background:linear-gradient(90deg,#4f46e5,#7c3aed)"></div>
+          </div>
+        </div>
+      `
+    })
+    .join('')
+}
+
 function render(tasks, habits, goals, reminders, notes) {
   const hour      = new Date().getHours()
   const greeting  = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening'

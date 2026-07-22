@@ -66,6 +66,16 @@ exports.deleteAllNotifications = async (req, res) => {
 exports.createNotification = async (userId, title, message, type = 'general', reference = null) => {
   try {
     await Notification.create({ user: userId, title, message, type, reference })
+
+    // Also send email notification if user has a valid email
+    try {
+      const user = await User.findById(userId)
+      if (user && user.email) {
+        await sendNotificationEmail(user.email, user.name, { title, message, type })
+      }
+    } catch (emailErr) {
+      console.error('Failed to send notification email:', emailErr.message)
+    }
   } catch (err) {
     console.error('Failed to create notification:', err.message)
   }

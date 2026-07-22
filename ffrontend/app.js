@@ -3387,7 +3387,7 @@ if (page === 'account') {
             name:     fullNameInput.value.trim(),
             email:    emailInput.value.trim(),
             timezone: timezoneInput.value,
-            currency: currencyInput ? currencyInput.value : 'USD',
+            currency: currencyInput ? currencyInput.value : 'GHS',
         };
         if (!data.name) { showToast('Please enter your full name.', 'error'); return; }
         if (!data.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {

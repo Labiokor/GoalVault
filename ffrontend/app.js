@@ -247,6 +247,34 @@ async function pollDueReminders() {
                 
                 pushNotification('reminder', 'Reminder fired! ⏰', `Your reminder "${reminder.title}" is due now.`);
                 showToast(`⏰ Reminder: ${reminder.title}`, 'warning');
+                
+                // Show a banner across the webpage
+                const banner = document.createElement('div');
+                banner.style.position = 'fixed';
+                banner.style.top = '0';
+                banner.style.left = '0';
+                banner.style.width = '100%';
+                banner.style.backgroundColor = '#ef4444';
+                banner.style.color = '#fff';
+                banner.style.textAlign = 'center';
+                banner.style.padding = '12px';
+                banner.style.zIndex = '99999';
+                banner.style.fontWeight = '600';
+                banner.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+                banner.style.fontFamily = "'Inter', sans-serif";
+                banner.innerHTML = `
+                    <i class="fa-solid fa-bell" style="margin-right:8px;"></i>
+                    Reminder: ${reminder.title}
+                    <button style="margin-left:20px; padding:4px 10px; background:#fff; color:#ef4444; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-family:'Inter',sans-serif;" onclick="this.parentElement.remove()">Dismiss</button>
+                `;
+                document.body.appendChild(banner);
+
+                // Auto-refresh the reminders page if we are currently on it
+                if (window.location.pathname.endsWith('reminders.html') || window.location.pathname === '/reminders.html') {
+                    if (typeof fetchReminders === 'function') {
+                        fetchReminders();
+                    }
+                }
             }
         });
     } catch (err) {

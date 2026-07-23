@@ -5221,3 +5221,26 @@ body.dark .rem-modal-preview {
     border-color: #4f8ef7;
     box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.15);
 }
+/* Habit Cards (Dark Mode Safe) */
+.habit-completed-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  margin-bottom: 6px;
+  background: var(--green-light);
+  border-radius: 12px;
+  border-left: 4px solid var(--green);
+}
+.habit-past-day-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  margin-bottom: 6px;
+  background: var(--surface-2);
+  border-radius: 12px;
+}
+.text-danger { color: var(--accent); /* Assuming accent is red/orange */ }
+.text-danger-strict { color: #ef4444; } /* Red that works everywhere */
+

@@ -2,7 +2,7 @@
 // GOAL VAULT — app.js  (unified — all pages)
 // ============================================================
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = window.ENV.API_URL;
 
 async function apiFetch(path, options = {}) {
     const token = localStorage.getItem('gv_token');
@@ -1766,7 +1766,7 @@ if (page === 'habits') {
             renderCalendar(); // render calendar with real API data
         } catch (err) {
             console.error(err);
-            habitContainer.innerHTML = `<div style="color:#ef4444;text-align:center;padding:20px;">Failed to load habits.</div>`;
+            habitContainer.innerHTML = `<div style="color:var(--accent);text-align:center;padding:20px;">Failed to load habits.</div>`;
         }
     }
 
@@ -1900,7 +1900,7 @@ if (page === 'habits') {
         const circ      = 2 * Math.PI * r;
         const pct       = completedToday ? 100 : 0;
         const offset    = circ - (pct / 100) * circ;
-        const ringColor = completedToday ? '#5cb85c' : '#378ADD';
+        const ringColor = completedToday ? 'var(--green)' : 'var(--blue)';
         
         const freqLabel = freqLabels[habit.frequency] || 'Daily';
         const reminderTxt = habit.reminderTime ? ` · ⏰ ${habit.reminderTime}` : '';
@@ -1909,7 +1909,7 @@ if (page === 'habits') {
 <div class="habit-icon ${streakClass}">${habit.icon || '🌟'}</div>
 <div class="habit-info">
   <div class="habit-name">${habit.name}</div>
-  <div class="habit-streak">🔥 ${streak} Day Streak <span style="color:#aaa;font-size:11px;">(Best: ${habit.higheststreak || 0})</span><br><span class="freq" style="font-size:11px;">• ${freqLabel}${reminderTxt}</span></div>
+  <div class="habit-streak">🔥 ${streak} Day Streak <span style="color:var(--text-muted);font-size:11px;">(Best: ${habit.higheststreak || 0})</span><br><span class="freq" style="font-size:11px;">• ${freqLabel}${reminderTxt}</span></div>
 </div>
 <div class="habit-ring-wrap">
   <svg width="36" height="36" viewBox="0 0 36 36">
@@ -1923,8 +1923,8 @@ if (page === 'habits') {
   ${completedToday ? '✓ Done' : 'Mark done'}
 </button>
 <div class="habit-actions" style="display:flex; flex-direction:column; gap:4px; margin-left:8px;">
-    <span class="habit-edit" style="cursor:pointer;color:#3b82f6;font-size:13px;" title="Edit">✏️</span>
-    <span class="habit-delete" style="cursor:pointer;color:#ef4444;font-size:13px;" title="Delete">✕</span>
+    <span class="habit-edit" style="cursor:pointer;color:var(--accent-2);font-size:13px;" title="Edit">✏️</span>
+    <span class="habit-delete" style="cursor:pointer;color:var(--accent);font-size:13px;" title="Delete">✕</span>
 </div>`;
 
         card.querySelector('.complete-btn').addEventListener('click', async function() {
@@ -2011,23 +2011,22 @@ if (page === 'habits') {
         const completedHabits = habitsData.filter(h => isHabitCompletedToday(h));
         habitHistory.innerHTML = `
 <h4 style="margin:24px 0 10px;font-size:0.78rem;text-transform:uppercase;letter-spacing:1px;
-  color:#888;font-family:'JetBrains Mono',monospace;">Completed Today</h4>`;
+  color:var(--text-sub);font-family:'JetBrains Mono',monospace;">Completed Today</h4>`;
         if (completedHabits.length === 0) {
-            habitHistory.innerHTML += `<p style="font-size:0.82rem;color:#bbb;padding:8px 0;font-family:'Inter',sans-serif;">No habits completed yet today.</p>`;
+            habitHistory.innerHTML += `<p style="font-size:0.82rem;color:var(--text-muted);padding:8px 0;font-family:'Inter',sans-serif;">No habits completed yet today.</p>`;
         } else {
             completedHabits.forEach(habit => {
                 habitHistory.innerHTML += `
-<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;margin-bottom:6px;
-  background:#f0faf4;border-radius:12px;border-left:4px solid #5cb85c;">
+<div class="habit-completed-card">
   <span style="font-size:16px;">${habit.icon || '🌟'}</span>
   <div style="flex:1;">
-    <div style="font-size:0.88rem;color:#555;font-weight:600;text-decoration:line-through;
+    <div style="font-size:0.88rem;color:var(--text-primary);font-weight:600;text-decoration:line-through;
       font-family:'Poppins',sans-serif;">${habit.name}</div>
-    <div style="font-size:0.75rem;color:#5cb85c;margin-top:2px;font-family:'Inter',sans-serif;">
+    <div style="font-size:0.75rem;color:var(--green);margin-top:2px;font-family:'Inter',sans-serif;">
       🔥 ${habit.currentstreak || 0} day streak
     </div>
   </div>
-  <span style="color:#5cb85c;font-size:16px;font-weight:700;">✓</span>
+  <span style="color:var(--green);font-size:16px;font-weight:700;">✓</span>
 </div>`;
             });
         }
@@ -2042,16 +2041,15 @@ if (page === 'habits') {
         if (pastDays.length > 0) {
             habitHistory.innerHTML += `
 <h4 style="margin:20px 0 10px;font-size:0.78rem;text-transform:uppercase;letter-spacing:1px;
-  color:#888;font-family:'JetBrains Mono',monospace;">Past Days</h4>`;
+  color:var(--text-sub);font-family:'JetBrains Mono',monospace;">Past Days</h4>`;
             pastDays.forEach(({ pct: p, d }) => {
                 const label = d.toLocaleDateString('default', { weekday:'short', month:'short', day:'numeric' });
                 const color = p === 100 ? '#5cb85c' : p >= 50 ? '#e67e22' : '#e74c3c';
                 habitHistory.innerHTML += `
-<div style="display:flex;align-items:center;gap:10px;padding:8px 14px;margin-bottom:6px;
-  background:#f7f9fc;border-radius:12px;border-left:4px solid ${color};">
+<div class="habit-past-day-card" style="border-left:4px solid ${color};">
   <div style="flex:1;">
-    <div style="font-size:0.85rem;font-weight:600;color:#555;font-family:'Poppins',sans-serif;">${label}</div>
-    <div style="font-size:0.75rem;color:#888;margin-top:2px;font-family:'Inter',sans-serif;">${p}% of habits completed</div>
+    <div style="font-size:0.85rem;font-weight:600;color:var(--text-primary);font-family:'Poppins',sans-serif;">${label}</div>
+    <div style="font-size:0.75rem;color:var(--text-sub);margin-top:2px;font-family:'Inter',sans-serif;">${p}% of habits completed</div>
   </div>
   <div style="font-size:0.82rem;font-weight:700;color:${color};font-family:'JetBrains Mono',monospace;">${p}%</div>
 </div>`;
@@ -3572,7 +3570,7 @@ if (page === 'account') {
 // ============================================================
 // Wallet / Finance — account page wiring
 if (page === 'account') {
-    const WALLET_API_BASE = 'http://localhost:5000/api/finance'; // adjust to match your backend
+    const WALLET_API_BASE = `${window.ENV.API_URL}/api/finance`; // adjust to match your backend
 
     const walletState = { plans: [], transactions: [] };
 

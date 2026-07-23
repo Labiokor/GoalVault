@@ -148,7 +148,7 @@ loginBtn.addEventListener('click', async () => {
     loginBtn.disabled    = true;
 
     try {
-        const res = await fetch('http://localhost:5000/api/auth/login', {
+        const res = await fetch(`${window.ENV.API_URL}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email: emailVal, password: passwordVal })
@@ -322,7 +322,7 @@ signupBtn.addEventListener('click', async () => {
     signupBtn.disabled    = true;
 
     try {
-        const res = await fetch('http://localhost:5000/api/auth/register', {
+        const res = await fetch(`${window.ENV.API_URL}/api/auth/register`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name: nameVal, email: emailVal, password: passwordVal })
@@ -408,7 +408,7 @@ setupBtn.addEventListener('click', async () => {
 
     try {
         const token = localStorage.getItem('gv_token');
-        const res = await fetch('http://localhost:5000/api/auth/profile', {
+        const res = await fetch(`${window.ENV.API_URL}/api/auth/profile`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',

@@ -3504,7 +3504,7 @@ if (page === 'account') {
         try {
             const res = await apiFetch('/api/auth/profile', {
                 method: 'PUT',
-                body: JSON.stringify(data)
+                body: data
             });
 
             localStorage.setItem('accountData', JSON.stringify(data));

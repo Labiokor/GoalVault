@@ -5,8 +5,8 @@ const UserSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   email: { type: String, required: true, unique: true, lowercase: true, trim: true },
   password: { type: String, required: true, select: false },  // never returned in queries
-  timezone: { type: String, default: '' },
-  currency: { type: String, default: 'USD' }
+  timezone: { type: String },
+  currency: { type: String }
 }, { timestamps: true })
 
 UserSchema.pre('save', async function () { 

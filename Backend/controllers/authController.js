@@ -113,8 +113,44 @@ exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select('-password')
     if (!user) return error(res, 'User not found', 404)
-    success(res, { id: user._id, name: user.name, email: user.email }, 'User profile retrieved')
+    success(res, { id: user._id, name: user.name, email: user.email, timezone: user.timezone, currency: user.currency }, 'User profile retrieved')
   } catch (err) {
     error(res, err.message, 500)
   }
 }
+
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, email, timezone, currency } = req.body
+    
+    if (!name || !email) {
+      return error(res, 'Name and email are required', 400)
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(email)) {
+      return error(res, 'Please enter a valid email address', 400)
+    }
+
+    const normalizedEmail = email.toLowerCase()
+    
+    // Check if another user is using the email
+    const existing = await User.findOne({ email: normalizedEmail, _id: { $ne: req.user.id } })
+    if (existing) return error(res, 'An account with this email already exists', 400)
+
+    const user = await User.findById(req.user.id)
+    if (!user) return error(res, 'User not found', 404)
+
+    user.name = name
+    user.email = normalizedEmail
+    if (timezone !== undefined) user.timezone = timezone
+    if (currency !== undefined) user.currency = currency
+
+    await user.save()
+
+    success(res, { id: user._id, name: user.name, email: user.email, timezone: user.timezone, currency: user.currency }, 'Profile updated successfully')
+  } catch (err) {
+    error(res, err.message, 500)
+  }
+}
+

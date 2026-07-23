@@ -193,6 +193,9 @@ function initGlobals() {
     pollDueReminders();
     if (!reminderInterval) reminderInterval = setInterval(pollDueReminders, 30000);
     if (!badgeInterval) badgeInterval = setInterval(updateNotifBadge, 30000);
+
+    // Show opt-in banner if needed
+    try { showNotificationBanner(); } catch (e) { /* Notification API unavailable */ }
 }
 if (document.readyState === 'loading') {
     window.addEventListener('DOMContentLoaded', initGlobals);
@@ -247,6 +250,34 @@ async function pollDueReminders() {
                 
                 pushNotification('reminder', 'Reminder fired! ⏰', `Your reminder "${reminder.title}" is due now.`);
                 showToast(`⏰ Reminder: ${reminder.title}`, 'warning');
+                
+                // Show a banner across the webpage
+                const banner = document.createElement('div');
+                banner.style.position = 'fixed';
+                banner.style.top = '0';
+                banner.style.left = '0';
+                banner.style.width = '100%';
+                banner.style.backgroundColor = '#ef4444';
+                banner.style.color = '#fff';
+                banner.style.textAlign = 'center';
+                banner.style.padding = '12px';
+                banner.style.zIndex = '99999';
+                banner.style.fontWeight = '600';
+                banner.style.boxShadow = '0 4px 6px rgba(0,0,0,0.1)';
+                banner.style.fontFamily = "'Inter', sans-serif";
+                banner.innerHTML = `
+                    <i class="fa-solid fa-bell" style="margin-right:8px;"></i>
+                    Reminder: ${reminder.title}
+                    <button style="margin-left:20px; padding:4px 10px; background:#fff; color:#ef4444; border:none; border-radius:4px; cursor:pointer; font-weight:600; font-family:'Inter',sans-serif;" onclick="this.parentElement.remove()">Dismiss</button>
+                `;
+                document.body.appendChild(banner);
+
+                // Auto-refresh the reminders page if we are currently on it
+                if (window.location.pathname.endsWith('reminders.html') || window.location.pathname === '/reminders.html') {
+                    if (typeof fetchReminders === 'function') {
+                        fetchReminders();
+                    }
+                }
             }
         });
     } catch (err) {
@@ -254,16 +285,78 @@ async function pollDueReminders() {
     }
 }
 
-function requestNotificationPermissionOnce() {
-    if (typeof Notification === 'undefined') return; // Not supported in this context
+// ============================================================
+// NOTIFICATION PERMISSION BANNER
+// ============================================================
+
+// Step 3: Clean up poisoned flag for existing users
+if (typeof Notification !== 'undefined' && Notification.permission !== 'granted') {
+    if (localStorage.getItem('notifPermissionAsked') === 'true' && !localStorage.getItem('realNotifPromptSeen')) {
+        localStorage.removeItem('notifPermissionAsked');
+    }
+}
+
+function showNotificationBanner() {
+    if (typeof Notification === 'undefined') return;
     if (Notification.permission !== 'default') return;
-    if (localStorage.getItem('notifPermissionAsked')) return;
-    Notification.requestPermission().then(permission => {
-        localStorage.setItem('notifPermissionAsked', 'true');
-        localStorage.setItem('notifPermission', permission);
+    if (localStorage.getItem('notifBannerDismissed')) return;
+
+    // Flag that we've used the real prompt system for this user
+    localStorage.setItem('realNotifPromptSeen', 'true');
+
+    const banner = document.createElement('div');
+    banner.className = 'notif-banner';
+    banner.style.position = 'fixed';
+    banner.style.bottom = '20px';
+    banner.style.right = '20px';
+    banner.style.backgroundColor = '#1e293b';
+    banner.style.color = '#fff';
+    banner.style.padding = '16px';
+    banner.style.borderRadius = '8px';
+    banner.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.5)';
+    banner.style.zIndex = '999999';
+    banner.style.display = 'flex';
+    banner.style.flexDirection = 'column';
+    banner.style.gap = '10px';
+    banner.style.fontFamily = "'Inter', sans-serif";
+    banner.style.maxWidth = '300px';
+
+    banner.innerHTML = `
+        <div style="font-weight:600; display:flex; align-items:center; gap:8px;">
+            <i class="fa-solid fa-bell" style="color:#3b82f6;"></i>
+            Enable Notifications
+        </div>
+        <div style="font-size:0.85rem; color:#94a3b8;">
+            Get OS-level alerts when your reminders are due.
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:4px;">
+            <button id="notifBannerDismiss" style="padding:6px 12px; background:transparent; color:#94a3b8; border:none; cursor:pointer; font-weight:600; border-radius:4px;">Later</button>
+            <button id="notifBannerEnable" style="padding:6px 12px; background:#3b82f6; color:#fff; border:none; cursor:pointer; font-weight:600; border-radius:4px;">Enable</button>
+        </div>
+    `;
+
+    document.body.appendChild(banner);
+
+    document.getElementById('notifBannerDismiss').addEventListener('click', () => {
+        banner.remove();
+        localStorage.setItem('notifBannerDismissed', 'true');
+    });
+
+    document.getElementById('notifBannerEnable').addEventListener('click', () => {
+        Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+                banner.remove();
+                showToast('Notifications enabled ✓', 'success');
+            } else if (permission === 'denied') {
+                banner.remove();
+                showToast('Notifications denied. You can re-enable them in browser settings.', 'error');
+            } else {
+                banner.remove(); // Just hide it if dismissed this time
+            }
+        });
     });
 }
-try { requestNotificationPermissionOnce(); } catch (e) { /* Notification API unavailable */ }
+
 
 // ============================================================
 // SHARED TOAST
@@ -358,6 +451,9 @@ function logoutUser() {
         () => {
             localStorage.removeItem('gv_token');
             localStorage.removeItem('gv_user_name');
+            localStorage.removeItem('accountData');
+            localStorage.removeItem('profileImage');
+            localStorage.removeItem('memberSince');
             localStorage.removeItem('hubUser');
             localStorage.removeItem('hubEmail');
             sessionStorage.removeItem('hubUser');
@@ -951,7 +1047,22 @@ if (page === 'reminders') {
         }
 
         function updatePickers() {
-            document.querySelectorAll('.rem-cat-btn').forEach(b => b.classList.toggle('active-cat', b.dataset.cat === currentCat));
+            document.querySelectorAll('.rem-cat-btn').forEach(b => {
+                const isActive = b.dataset.cat === currentCat;
+                b.classList.toggle('active-cat', isActive);
+                if (isActive) {
+                    const color = CAT_CONFIG[currentCat]?.color || '#7c3aed';
+                    b.style.borderColor = color;
+                    b.style.borderWidth = '2px';
+                    b.style.backgroundColor = color + '25'; // Add ~15% opacity background
+                    b.style.color = color;
+                } else {
+                    b.style.borderColor = '';
+                    b.style.borderWidth = '';
+                    b.style.backgroundColor = '';
+                    b.style.color = '';
+                }
+            });
             document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(b => b.classList.toggle('active-freq', b.dataset.freq === currentFreq));
         }
 
@@ -970,9 +1081,28 @@ if (page === 'reminders') {
         document.getElementById('closeReminderModal')?.addEventListener('click', () => { closeOverlay('reminderModalOverlay'); resetModal(); });
         document.getElementById('closeSnoozeModal')?.addEventListener('click', () => { closeOverlay('snoozeModalOverlay'); snoozeTargetId = null; });
 
-        document.querySelectorAll('.rem-cat-btn').forEach(btn => btn.addEventListener('click', function() { currentCat = this.dataset.cat; updatePickers(); }));
-        document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(btn => btn.addEventListener('click', function() { currentFreq = this.dataset.freq; updatePickers(); }));
-        document.querySelectorAll('.rem-snooze-btn').forEach(btn => btn.addEventListener('click', function() { snoozeReminder(parseInt(this.dataset.snooze)); }));
+        function updateRemModalPreview() {
+            const dateStr = document.getElementById('remDateInput')?.value;
+            const timeStr = document.getElementById('remTimeInput')?.value;
+            const preview = document.getElementById('remModalPreview');
+            const previewT = document.getElementById('remPreviewText');
+            if (!preview || !previewT) return;
+            const text = buildReminderPreview(currentFreq, dateStr, timeStr);
+            if (text) {
+                previewT.textContent = text;
+                preview.style.display = 'flex';
+            } else {
+                preview.style.display = 'none';
+            }
+        }
+
+        document.querySelectorAll('.rem-cat-btn').forEach(btn => btn.addEventListener('click', function(e) { e.preventDefault(); currentCat = this.dataset.cat; updatePickers(); }));
+        document.querySelectorAll('#remFreqPicker .goal-freq-btn').forEach(btn => btn.addEventListener('click', function(e) { e.preventDefault(); currentFreq = this.dataset.freq; updatePickers(); updateRemModalPreview(); }));
+        document.querySelectorAll('.rem-snooze-btn').forEach(btn => btn.addEventListener('click', function(e) { e.preventDefault(); snoozeReminder(parseInt(this.dataset.snooze)); }));
+        
+        ['remDateInput', 'remTimeInput'].forEach(id => {
+            document.getElementById(id)?.addEventListener('change', updateRemModalPreview);
+        });
 
         ['reminderModalOverlay', 'snoozeModalOverlay'].forEach(id => {
             document.getElementById(id)?.addEventListener('click', function (e) {
@@ -3303,25 +3433,30 @@ if (page === 'account') {
         ctx.fillText(initials, size / 2, size / 2 + 1);
     }
 
-    window.addEventListener('load', () => {
-        const saved = JSON.parse(localStorage.getItem('accountData'));
+    window.addEventListener('load', async () => {
         let displayName = 'GV'; // fallback initials
-        if (saved) {
-            if (fullNameInput) fullNameInput.value = saved.name     || '';
-            if (emailInput)    emailInput.value    = saved.email    || '';
-            if (timezoneInput) timezoneInput.value = saved.timezone || '';
-            if (currencyInput) currencyInput.value = saved.currency || 'USD';
-            if (accName)       accName.innerText   = saved.name     || 'Your Name';
-            if (accEmail)      accEmail.innerText  = saved.email    || 'your@email.com';
-            if (saved.name)    displayName = saved.name;
-        } else {
-            const hubUser  = localStorage.getItem('hubUser')  || sessionStorage.getItem('hubUser')  || '';
-            const hubEmail = localStorage.getItem('hubEmail') || sessionStorage.getItem('hubEmail') || '';
-            if (accName)       accName.innerText   = hubUser;
-            if (accEmail)      accEmail.innerText  = hubEmail;
-            if (fullNameInput) fullNameInput.value = hubUser;
-            if (emailInput)    emailInput.value    = hubEmail;
-            if (hubUser)       displayName = hubUser;
+        try {
+            const res = await apiFetch('/api/auth/me');
+            if (res && res.data) {
+                const user = res.data;
+                if (fullNameInput) fullNameInput.value = user.name || '';
+                if (emailInput)    emailInput.value    = user.email || '';
+                if (timezoneInput) timezoneInput.value = user.timezone || '';
+                if (currencyInput) currencyInput.value = user.currency || 'USD';
+                if (accName)       accName.innerText   = user.name || 'Your Name';
+                if (accEmail)      accEmail.innerText  = user.email || 'your@email.com';
+                if (user.name)     displayName = user.name;
+                
+                // Keep accountData in sync for other components that might rely on it (like walletFormatMoney)
+                localStorage.setItem('accountData', JSON.stringify({
+                    name: user.name,
+                    email: user.email,
+                    timezone: user.timezone,
+                    currency: user.currency || 'USD'
+                }));
+            }
+        } catch (err) {
+            console.error('Failed to load profile from API:', err);
         }
 
         // Draw initials avatar OR show uploaded photo
@@ -3354,7 +3489,7 @@ if (page === 'account') {
 
     window.cancelEdit = function () { location.reload(); };
 
-    window.saveAccount = function () {
+    window.saveAccount = async function () {
         const data = {
             name:     fullNameInput.value.trim(),
             email:    emailInput.value.trim(),
@@ -3365,20 +3500,33 @@ if (page === 'account') {
         if (!data.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(data.email)) {
             showToast('Please enter a valid email.', 'error'); return;
         }
-        localStorage.setItem('accountData', JSON.stringify(data));
-        if (accName)  accName.innerText  = data.name;
-        if (accEmail) accEmail.innerText = data.email;
-        // Redraw initials avatar if no custom photo uploaded
-        if (!localStorage.getItem('profileImage')) {
-            drawInitialsAvatar(data.name);
+
+        try {
+            const res = await apiFetch('/api/auth/profile', {
+                method: 'PUT',
+                body: data
+            });
+
+            localStorage.setItem('accountData', JSON.stringify(data));
+            if (accName)  accName.innerText  = data.name;
+            if (accEmail) accEmail.innerText = data.email;
+            
+            // Redraw initials avatar if no custom photo uploaded
+            if (!localStorage.getItem('profileImage')) {
+                drawInitialsAvatar(data.name);
+            }
+            
+            document.querySelectorAll('#accountSection input:not(#memberSince)').forEach(i => i.setAttribute('readonly', true));
+            document.querySelectorAll('#accountSection select').forEach(s => s.setAttribute('disabled', true));
+            document.getElementById('saveBtn').style.display   = 'none';
+            document.getElementById('cancelBtn').style.display = 'none';
+            document.querySelector('.edit-btn').style.display  = 'inline-flex';
+            
+            pushNotification('system', 'Profile updated ✓', 'Your profile has been updated successfully.');
+            showToast('Profile updated successfully! ✓', 'success');
+        } catch (err) {
+            showToast(err.message || 'Failed to update profile', 'error');
         }
-        document.querySelectorAll('#accountSection input:not(#memberSince)').forEach(i => i.setAttribute('readonly', true));
-        document.querySelectorAll('#accountSection select').forEach(s => s.setAttribute('disabled', true));
-        document.getElementById('saveBtn').style.display   = 'none';
-        document.getElementById('cancelBtn').style.display = 'none';
-        document.querySelector('.edit-btn').style.display  = 'inline-flex';
-        pushNotification('system', 'Profile updated ✓', 'Your profile has been updated successfully.');
-        showToast('Profile updated successfully! ✓', 'success');
     };
 
     window.openSettingsPage = function (pageId) {
@@ -3451,9 +3599,30 @@ if (page === 'account') {
         const headers = { ...options.headers };
         if (token) headers['Authorization'] = `Bearer ${token}`;
         
-        const res = await fetch(url, { ...options, headers });
-        if (!res.ok) throw new Error(`Request to ${url} failed with status ${res.status}`);
-        return res.json();
+        try {
+            const res = await fetch(url, { ...options, headers });
+            const data = await res.json().catch(() => ({}));
+            
+            if (res.status === 401) {
+                localStorage.removeItem('gv_token');
+                localStorage.removeItem('gv_user_name');
+                window.location.href = 'login.html';
+                return Promise.reject(data);
+            }
+            
+            if (!res.ok) {
+                // Attach the status to help with generic fallbacks
+                data._status = res.status;
+                data._url = url;
+                if (!data.message) {
+                    data.message = `Request to ${url} failed with status ${res.status}`;
+                }
+                return Promise.reject(data);
+            }
+            return data;
+        } catch (err) {
+            return Promise.reject(err);
+        }
     }
 
     async function loadWalletSummary() {
@@ -3760,6 +3929,7 @@ if (page === 'account') {
                     linkedPlan: txPlanId,
                     walletId: currentWallet ? currentWallet._id : null
                 };
+                console.log("PAYLOAD SENDS:", payload);
 
                 await walletFetchJSON(`${WALLET_API_BASE}/transactions`, {
                     method: 'POST',

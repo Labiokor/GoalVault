@@ -95,6 +95,56 @@
                 <button class="login-btn" id="signupBtn">Create Account</button>
             </div>
         </div>
+
+        <!-- Setup popup overlay (One-time after registration) -->
+        <div class="signup-overlay" id="setupOverlay">
+            <div class="signup-popup">
+                <h2>Welcome!</h2>
+                <p class="subtitle">Let's complete your profile</p>
+
+                <div class="input-group">
+                    <label for="setupName">Full Name</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-user"></i>
+                        <input type="text" id="setupName" placeholder="Your Name">
+                    </div>
+                    <p class="error-msg" id="setupNameError">Please enter your name.</p>
+                </div>
+
+                <div class="input-group">
+                    <label for="setupTimezone">Timezone</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-globe"></i>
+                        <select id="setupTimezone">
+                            <option value="">Select Timezone</option>
+                            <option value="GMT+0">(GMT+0:00) Accra</option>
+                            <option value="GMT+1">(GMT+1:00) Lagos</option>
+                            <option value="GMT-5">(GMT-5:00) New York</option>
+                            <option value="GMT+1">(GMT+1:00) London</option>
+                            <option value="GMT+2">(GMT+2:00) Cairo</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="setupCurrency">Currency</label>
+                    <div class="input-wrapper">
+                        <i class="fa-solid fa-coins"></i>
+                        <select id="setupCurrency">
+                            <option value="">Select Currency</option>
+                            <option value="USD">USD ($)</option>
+                            <option value="EUR">EUR (€)</option>
+                            <option value="GBP">GBP (£)</option>
+                            <option value="GHS">GHS (₵)</option>
+                            <option value="NGN">NGN (₦)</option>
+                            <option value="KES">KES (KSh)</option>
+                        </select>
+                    </div>
+                </div>
+
+                <button class="login-btn" id="setupBtn">Save & Continue</button>
+            </div>
+        </div>
     </div>
     <script src="login.js"></script>
 </body>

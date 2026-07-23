@@ -344,7 +344,7 @@ signupBtn.addEventListener('click', async () => {
             showToast(`Welcome aboard, ${nameVal}! 🎉`, 'success');
             setTimeout(() => {
                 closeSignupPopup();
-                window.location.href = 'index.html';
+                openSetup(data.data.user?.name || nameVal, emailVal);
             }, 1200);
         } else {
             showToast('Account created! Please log in.', 'success');
@@ -366,4 +366,86 @@ signupBtn.addEventListener('click', async () => {
     input.addEventListener('keydown', e => {
         if (e.key === 'Enter') signupBtn.click();
     });
+});
+
+// ============================================================
+// SETUP POPUP (Post-Registration)
+// ============================================================
+const setupOverlay = document.getElementById('setupOverlay');
+const setupNameEl = document.getElementById('setupName');
+const setupTimezoneEl = document.getElementById('setupTimezone');
+const setupCurrencyEl = document.getElementById('setupCurrency');
+const setupBtn = document.getElementById('setupBtn');
+const setupNameError = document.getElementById('setupNameError');
+
+let currentSetupEmail = '';
+
+function openSetup(nameVal, emailVal) {
+    currentSetupEmail = emailVal;
+    setupOverlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    setupNameEl.value = nameVal || '';
+    setupNameError.style.display = 'none';
+    setupNameEl.style.borderColor = '';
+}
+
+setupBtn.addEventListener('click', async () => {
+    const name = setupNameEl.value.trim();
+    const timezone = setupTimezoneEl.value;
+    const currency = setupCurrencyEl.value;
+
+    if (!name) {
+        setupNameError.style.display = 'block';
+        setupNameEl.style.borderColor = '#ef4444';
+        return;
+    }
+
+    setupNameError.style.display = 'none';
+    setupNameEl.style.borderColor = '';
+    
+    setupBtn.textContent = 'Saving...';
+    setupBtn.disabled = true;
+
+    try {
+        const token = localStorage.getItem('gv_token');
+        const res = await fetch('http://localhost:5000/api/auth/profile', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                name,
+                email: currentSetupEmail,
+                timezone,
+                currency
+            })
+        });
+        
+        if (!res.ok) {
+            setupBtn.textContent = 'Save & Continue';
+            setupBtn.disabled = false;
+            showToast('Failed to save profile. Proceeding to dashboard.', 'error');
+            setTimeout(() => {
+                window.location.href = 'index.html';
+            }, 1500);
+            return;
+        }
+
+        const data = await res.json();
+        localStorage.setItem('gv_user_name', data.data?.name || name);
+        showToast('Profile configured successfully!', 'success');
+        
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 1000);
+
+    } catch (err) {
+        setupBtn.textContent = 'Save & Continue';
+        setupBtn.disabled = false;
+        showToast('Network error, proceeding to dashboard.', 'error');
+        setTimeout(() => {
+            window.location.href = 'index.html';
+        }, 1500);
+    }
 });

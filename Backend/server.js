@@ -15,6 +15,8 @@ const financeRoutes = require('./routes/financeRoutes');
 const { processRecurringReminders } = require('./Utils/ReminderScheduler');
 
 const app = express();
+const mongoUri = process.env.ATLAS_URI || process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/Goal_Vault';
+const mongoUriSafe = mongoUri.replace(/:([^@]*?)@/, ':***@');
 
 app.use(cors({
   origin: true,
@@ -35,15 +37,17 @@ const allowedOrigins = [
   'https://goalvault-5sbh.onrender.com'
 ];
 
-const requiredEnvs = ['ATLAS_URI', 'JWT_SECRET'];
+const requiredEnvs = ['JWT_SECRET'];
 const missingEnvs = requiredEnvs.filter(name => !process.env[name]);
 if (missingEnvs.length) {
   console.error(`Missing required environment variables: ${missingEnvs.join(', ')}`);
   process.exit(1);
 }
 
+console.log(`MongoDB target: ${mongoUriSafe}`);
+
 // Mongoose connection
-mongoose.connect(process.env.ATLAS_URI, {
+mongoose.connect(mongoUri, {
   serverSelectionTimeoutMS: 5000,
   socketTimeoutMS: 45000,
 })
@@ -52,14 +56,15 @@ mongoose.connect(process.env.ATLAS_URI, {
     processRecurringReminders()
   })
   .catch(err => {
-    console.log('Error connecting to database:', err)
+    console.log('Error connecting to database:', err.message)
+    console.log('Application is running, but database-backed routes will fail until MongoDB is reachable.')
   })
 
 // reconnect when connection drops
 mongoose.connection.on('disconnected', () => {
   console.log('MongoDB disconnected — attempting reconnect...')
   setTimeout(() => {
-    mongoose.connect(process.env.ATLAS_URI)
+    mongoose.connect(mongoUri)
       .then(() => console.log('MongoDB reconnected'))
       .catch(err => console.log('Reconnect failed:', err.message))
   }, 5000)
